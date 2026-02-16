@@ -127,6 +127,24 @@ void Server::setNamespaceConnectHandler(NamespaceConnectHandler handler)
   namespaceConnectHandler = std::move(handler);
 }
 
+void Server::addEventMiddleware(EventMiddleware middleware)
+{
+  std::lock_guard<std::mutex> lock(eventMiddlewareMutex);
+  eventMiddlewares.push_back(std::move(middleware));
+}
+
+void Server::clearEventMiddlewares()
+{
+  std::lock_guard<std::mutex> lock(eventMiddlewareMutex);
+  eventMiddlewares.clear();
+}
+
+void Server::setClientAckHandler(ClientAckHandler handler)
+{
+  std::lock_guard<std::mutex> lock(ackHandlerMutex);
+  clientAckHandler = std::move(handler);
+}
+
 void Server::acceptLoop()
 {
   while (running.load()) {
@@ -208,6 +226,28 @@ Server::ConnectDecision Server::evaluateEventGuard(
   return handlerCopy(*this, sid, protocol::normalizeNamespace(nsp), eventName, eventData);
 }
 
+std::optional<Server::ConnectDecision> Server::evaluateEventMiddleware(const InboundEventContext& context)
+{
+  std::vector<EventMiddleware> middlewareChain;
+  {
+    std::lock_guard<std::mutex> lock(eventMiddlewareMutex);
+    middlewareChain = eventMiddlewares;
+  }
+
+  for (const auto& middleware : middlewareChain) {
+    if (!middleware) {
+      continue;
+    }
+
+    std::optional<ConnectDecision> decision = middleware(*this, context);
+    if (decision.has_value()) {
+      return decision;
+    }
+  }
+
+  return std::nullopt;
+}
+
 std::chrono::milliseconds Server::sessionTtl() const
 {
   return std::chrono::milliseconds(
@@ -255,6 +295,13 @@ void Server::dispatchSocketIoEventData(
     return;
   }
 
+  const InboundEventContext context{sid, protocol::normalizeNamespace(nsp), eventName, eventData, ackId};
+  const std::optional<ConnectDecision> middlewareDecision = evaluateEventMiddleware(context);
+  if (middlewareDecision.has_value() && !middlewareDecision->allowed) {
+    sendPacket(protocol::makeSocketIoErrorEventPacket(nsp, middlewareDecision->code, middlewareDecision->message));
+    return;
+  }
+
   const ConnectDecision guardDecision = evaluateEventGuard(sid, nsp, eventName, eventData);
   if (!guardDecision.allowed) {
     sendPacket(protocol::makeSocketIoErrorEventPacket(nsp, guardDecision.code, guardDecision.message));
@@ -278,6 +325,20 @@ void Server::dispatchSocketIoEventData(
   };
 
   handlerCopy(*this, sid, nsp, eventName, eventData, ack);
+}
+
+void Server::dispatchSocketIoAckData(
+    const std::string& sid, const std::string& nsp, const std::string& ackId, const std::string& ackPayload)
+{
+  ClientAckHandler handlerCopy;
+  {
+    std::lock_guard<std::mutex> lock(ackHandlerMutex);
+    handlerCopy = clientAckHandler;
+  }
+  if (!handlerCopy) {
+    return;
+  }
+  handlerCopy(*this, sid, protocol::normalizeNamespace(nsp), ackId, ackPayload);
 }
 
 void Server::registerWebSocketClient(int clientFd, const std::string& sid)

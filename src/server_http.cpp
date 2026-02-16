@@ -38,6 +38,7 @@ void Server::processEngineIoPacket(const std::string& sid, const std::string& pa
 
   if (packet.rfind(protocol::kEngineIoPacketBinaryPrefix, 0) == 0) {
     protocol::SocketIoEventPacket pendingEvent;
+    protocol::SocketIoAckPacket pendingAck;
     std::vector<std::string> attachments;
     bool readyToDispatch = false;
     bool readyToFinalizeAck = false;
@@ -101,6 +102,9 @@ void Server::processEngineIoPacket(const std::string& sid, const std::string& pa
 
       if (session.pendingBinaryAttachments.size() == session.pendingBinaryExpectedAttachmentCount) {
         if (session.pendingBinaryIsAck) {
+          pendingAck.nsp = session.pendingBinaryNsp;
+          pendingAck.ackId = session.pendingBinaryAckId;
+          pendingAck.ackPayload = session.pendingBinaryEventPayload;
           readyToFinalizeAck = true;
         } else {
           pendingEvent.nsp = session.pendingBinaryNsp;
@@ -114,6 +118,9 @@ void Server::processEngineIoPacket(const std::string& sid, const std::string& pa
     }
 
     if (readyToFinalizeAck) {
+      const std::string mergedAckPayload =
+          protocol::mergeSocketIoBinaryEventData(pendingAck.ackPayload, attachments);
+      dispatchSocketIoAckData(sid, pendingAck.nsp, pendingAck.ackId, mergedAckPayload);
       return;
     }
 
@@ -143,7 +150,7 @@ void Server::processEngineIoPacket(const std::string& sid, const std::string& pa
     return;
   }
 
-  if (packetType != protocol::SocketIoPacketType::binaryEvent) {
+  {
     std::lock_guard<std::mutex> lock(sessionsMutex);
     const auto sessionIt = sessions.find(sid);
     if (sessionIt != sessions.end() && sessionIt->second.pendingBinaryExpectedAttachmentCount > 0) {
@@ -152,6 +159,7 @@ void Server::processEngineIoPacket(const std::string& sid, const std::string& pa
                                  sessionIt->second.pendingBinaryNsp, constants::kCodeBinaryAttachmentCountMismatch,
                                  constants::kMessageBinaryAttachmentCountMismatch));
       resetPendingBinaryState(sessionIt->second);
+      return;
     }
   }
 
@@ -221,7 +229,9 @@ void Server::processEngineIoPacket(const std::string& sid, const std::string& pa
       sessionIt->second.pendingBinaryExpectedAttachmentCount = static_cast<std::size_t>(ackPacket.attachmentCount);
       sessionIt->second.pendingBinaryTotalBytes = 0;
       sessionIt->second.pendingBinaryAttachments.clear();
+      return;
     }
+    dispatchSocketIoAckData(sid, ackPacket.nsp, ackPacket.ackId, ackPacket.ackPayload);
     return;
   }
 

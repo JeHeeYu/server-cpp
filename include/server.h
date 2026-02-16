@@ -10,6 +10,7 @@
 #include <thread>
 #include <unordered_map>
 #include <unordered_set>
+#include <optional>
 #include <vector>
 
 namespace socketIoServer {
@@ -48,6 +49,14 @@ class Server {
     int code = 403;
     std::string message = "namespace rejected";
   };
+  struct InboundEventContext {
+    std::string sid;
+    std::string nsp;
+    std::string eventName;
+    std::string eventData;
+    std::string ackId;
+  };
+  using EventMiddleware = std::function<std::optional<ConnectDecision>(Server& server, const InboundEventContext& context)>;
   using EventHandler = std::function<void(
       Server& server, const std::string& sid, const std::string& nsp, const std::string& eventName,
       const std::string& eventData, const AckCallback& ack)>;
@@ -56,6 +65,9 @@ class Server {
       const std::string& eventData)>;
   using NamespaceConnectHandler = std::function<ConnectDecision(
       Server& server, const std::string& sid, const std::string& nsp, const std::string& authJson)>;
+  using ClientAckHandler = std::function<void(
+      Server& server, const std::string& sid, const std::string& nsp, const std::string& ackId,
+      const std::string& ackPayload)>;
 
   explicit Server(ServerConfig config);
 
@@ -65,11 +77,17 @@ class Server {
   void setEventHandler(EventHandler handler);
   void setEventGuardHandler(EventGuardHandler handler);
   void setNamespaceConnectHandler(NamespaceConnectHandler handler);
+  void addEventMiddleware(EventMiddleware middleware);
+  void clearEventMiddlewares();
+  void setClientAckHandler(ClientAckHandler handler);
   void joinRoom(const std::string& sid, const std::string& nsp, const std::string& room);
   void leaveRoom(const std::string& sid, const std::string& nsp, const std::string& room);
   void emitToRoomEvent(
       const std::string& nsp, const std::string& room, const std::string& eventName,
       const std::string& jsonObjectPayload, const std::string& excludeSid = "");
+  void emitToRoomEvent(
+      const std::string& nsp, const std::string& room, const std::string& eventName,
+      const std::string& jsonObjectPayload, const std::vector<std::string>& excludedSids);
 
  private:
   struct SessionState {
@@ -109,16 +127,22 @@ class Server {
       const std::string& sid, const std::string& nsp, const std::string& authJson);
   ConnectDecision evaluateEventGuard(
       const std::string& sid, const std::string& nsp, const std::string& eventName, const std::string& eventData);
+  std::optional<ConnectDecision> evaluateEventMiddleware(const InboundEventContext& context);
   std::chrono::milliseconds sessionTtl() const;
   void dispatchSocketIoEvent(
       const std::string& sid, const std::string& packet, const std::function<void(const std::string&)>& sendPacket);
   void dispatchSocketIoEventData(
       const std::string& sid, const std::string& nsp, const std::string& ackId, const std::string& eventName,
       const std::string& eventData, const std::function<void(const std::string&)>& sendPacket);
+  void dispatchSocketIoAckData(
+      const std::string& sid, const std::string& nsp, const std::string& ackId, const std::string& ackPayload);
   std::string makeRoomKey(const std::string& nsp, const std::string& room) const;
   void broadcastToRoom(
       const std::string& nsp, const std::string& room, const std::string& packet,
       const std::string& excludeSid = "");
+  void broadcastToRoom(
+      const std::string& nsp, const std::string& room, const std::string& packet,
+      const std::vector<std::string>& excludedSids);
   bool handleHttpRequest(const std::string& request, std::string& response);
   void enqueuePacket(const std::string& sid, const std::string& packet);
   void enqueuePacketUnlocked(SessionState& session, const std::string& packet);
@@ -136,10 +160,14 @@ class Server {
   std::mutex sessionsMutex;
   std::mutex eventHandlerMutex;
   std::mutex eventGuardMutex;
+  std::mutex eventMiddlewareMutex;
   std::mutex connectHandlerMutex;
+  std::mutex ackHandlerMutex;
   EventHandler eventHandler;
   EventGuardHandler eventGuardHandler;
+  std::vector<EventMiddleware> eventMiddlewares;
   NamespaceConnectHandler namespaceConnectHandler;
+  ClientAckHandler clientAckHandler;
   std::unordered_map<std::string, SessionState> sessions;
   std::unordered_map<std::string, std::unordered_set<std::string>> roomMembers;
   std::unordered_map<std::string, std::unordered_set<std::string>> sessionRooms;
