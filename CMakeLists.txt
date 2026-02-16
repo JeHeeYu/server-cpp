@@ -22,6 +22,8 @@ add_library(socketIoServerCore
   src/utils/engine_io_util.cpp
   src/utils/websocket_util.cpp
   src/server.cpp
+  src/session.cpp
+  src/room.cpp
   src/server_http.cpp
   src/server_ws.cpp
 )
