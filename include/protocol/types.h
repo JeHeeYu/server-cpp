@@ -44,6 +44,7 @@ std::string makeSocketIoAckPacket(
     const std::string& ackId, const std::string& ackJsonArrayPayload, const std::string& nsp = "/");
 std::string makeSocketIoEventPacket(
     const std::string& eventName, const std::string& jsonObjectPayload, const std::string& nsp = "/");
+std::string makeSocketIoErrorEventPacket(const std::string& nsp, int code, const std::string& message);
 
 bool hasPingEventName(const std::string& payload);
 bool isEngineIoProbePingPacket(const std::string& packet);

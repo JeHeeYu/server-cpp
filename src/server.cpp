@@ -98,6 +98,12 @@ void Server::setEventHandler(EventHandler handler)
   eventHandler = std::move(handler);
 }
 
+void Server::setEventGuardHandler(EventGuardHandler handler)
+{
+  std::lock_guard<std::mutex> lock(eventGuardMutex);
+  eventGuardHandler = std::move(handler);
+}
+
 void Server::setNamespaceConnectHandler(NamespaceConnectHandler handler)
 {
   std::lock_guard<std::mutex> lock(connectHandlerMutex);
@@ -231,6 +237,17 @@ void Server::disconnectNamespace(const std::string& sid, const std::string& nsp)
   }
 }
 
+bool Server::isNamespaceConnected(const std::string& sid, const std::string& nsp)
+{
+  const std::string normalized = protocol::normalizeNamespace(nsp);
+  std::lock_guard<std::mutex> lock(sessionsMutex);
+  const auto it = sessions.find(sid);
+  if (it == sessions.end()) {
+    return false;
+  }
+  return it->second.connectedNamespaces.find(normalized) != it->second.connectedNamespaces.end();
+}
+
 Server::ConnectDecision Server::evaluateNamespaceConnect(
     const std::string& sid, const std::string& nsp, const std::string& authJson)
 {
@@ -243,6 +260,20 @@ Server::ConnectDecision Server::evaluateNamespaceConnect(
     return ConnectDecision{};
   }
   return handlerCopy(*this, sid, protocol::normalizeNamespace(nsp), authJson);
+}
+
+Server::ConnectDecision Server::evaluateEventGuard(
+    const std::string& sid, const std::string& nsp, const std::string& eventName, const std::string& eventData)
+{
+  EventGuardHandler handlerCopy;
+  {
+    std::lock_guard<std::mutex> lock(eventGuardMutex);
+    handlerCopy = eventGuardHandler;
+  }
+  if (!handlerCopy) {
+    return ConnectDecision{};
+  }
+  return handlerCopy(*this, sid, protocol::normalizeNamespace(nsp), eventName, eventData);
 }
 
 std::chrono::milliseconds Server::sessionTtl() const
@@ -336,15 +367,27 @@ void Server::emitToRoomEvent(
 void Server::dispatchSocketIoEvent(
     const std::string& sid, const std::string& packet, const std::function<void(const std::string&)>& sendPacket)
 {
-  std::string ackId;
   protocol::SocketIoEventPacket eventPacket;
   if (!protocol::parseSocketIoEventPacket(packet, eventPacket)) {
+    sendPacket(protocol::makeSocketIoErrorEventPacket("/", 4002, "malformed event packet"));
+    return;
+  }
+
+  if (!isNamespaceConnected(sid, eventPacket.nsp)) {
+    sendPacket(protocol::makeSocketIoErrorEventPacket(eventPacket.nsp, 4003, "namespace not connected"));
     return;
   }
 
   const std::string eventName = protocol::parseSocketIoEventName(eventPacket.eventPayload);
   const std::string eventData = protocol::parseSocketIoEventData(eventPacket.eventPayload);
   if (eventName.empty()) {
+    sendPacket(protocol::makeSocketIoErrorEventPacket(eventPacket.nsp, 4004, "empty event name"));
+    return;
+  }
+
+  const ConnectDecision guardDecision = evaluateEventGuard(sid, eventPacket.nsp, eventName, eventData);
+  if (!guardDecision.allowed) {
+    sendPacket(protocol::makeSocketIoErrorEventPacket(eventPacket.nsp, guardDecision.code, guardDecision.message));
     return;
   }
 

@@ -84,6 +84,12 @@ std::string makeSocketIoEventPacket(
   return namespacePrefix("42", nsp) + "[\"" + eventName + "\"," + jsonObjectPayload + "]";
 }
 
+std::string makeSocketIoErrorEventPacket(const std::string& nsp, int code, const std::string& message)
+{
+  return makeSocketIoEventPacket(
+      "server_error", "{\"code\":" + std::to_string(code) + ",\"message\":\"" + message + "\"}", nsp);
+}
+
 bool hasPingEventName(const std::string& payload)
 {
   return payload.find("\"ping\"") != std::string::npos;

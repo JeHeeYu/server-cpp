@@ -18,6 +18,15 @@ int main()
   }
 
   socketIoServer::Server server(config);
+  server.setEventGuardHandler(
+      [](socketIoServer::Server&, const std::string&, const std::string&, const std::string& eventName,
+          const std::string&) {
+        if (eventName == "forbidden_event") {
+          return socketIoServer::Server::ConnectDecision{false, 4032, "event forbidden"};
+        }
+        return socketIoServer::Server::ConnectDecision{};
+      });
+
   server.setNamespaceConnectHandler(
       [](socketIoServer::Server&, const std::string&, const std::string& nsp, const std::string& authJson) {
         if (nsp == "/blocked") {
