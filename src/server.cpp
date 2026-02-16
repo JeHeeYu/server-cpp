@@ -480,19 +480,24 @@ void Server::enqueuePacket(const std::string& sid, const std::string& packet)
   if (it == sessions.end()) {
     return;
   }
-  it->second.lastSeenAt = std::chrono::steady_clock::now();
-  it->second.online = true;
-  it->second.disconnectedAt = std::chrono::steady_clock::time_point::min();
+  enqueuePacketUnlocked(it->second, packet);
+}
+
+void Server::enqueuePacketUnlocked(SessionState& session, const std::string& packet)
+{
+  session.lastSeenAt = std::chrono::steady_clock::now();
+  session.online = true;
+  session.disconnectedAt = std::chrono::steady_clock::time_point::min();
   if (config.maxOutgoingPacketsPerSession > 0 &&
-      it->second.outgoingPackets.size() >= config.maxOutgoingPacketsPerSession) {
+      session.outgoingPackets.size() >= config.maxOutgoingPacketsPerSession) {
     if (config.outgoingOverflowPolicy == ServerConfig::OutgoingOverflowPolicy::dropNewest) {
       return;
     }
-    if (!it->second.outgoingPackets.empty()) {
-      it->second.outgoingPackets.pop_front();
+    if (!session.outgoingPackets.empty()) {
+      session.outgoingPackets.pop_front();
     }
   }
-  it->second.outgoingPackets.push_back(packet);
+  session.outgoingPackets.push_back(packet);
 }
 
 void Server::registerWebSocketClient(int clientFd, const std::string& sid)

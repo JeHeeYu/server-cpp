@@ -112,6 +112,7 @@ class Server {
       const std::string& excludeSid = "");
   bool handleHttpRequest(const std::string& request, std::string& response);
   void enqueuePacket(const std::string& sid, const std::string& packet);
+  void enqueuePacketUnlocked(SessionState& session, const std::string& packet);
   void registerWebSocketClient(int clientFd, const std::string& sid);
   void unregisterWebSocketClient(int clientFd);
   void resetPendingBinaryState(SessionState& session);
