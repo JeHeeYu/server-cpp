@@ -1,4 +1,4 @@
-#include "protocol.h"
+#include "protocol/types.h"
 
 #include <cstdlib>
 
@@ -16,49 +16,6 @@ std::string namespacePrefix(const std::string& packetTypeCode, const std::string
 }
 
 }  // namespace
-
-bool isEngineIoVersion4(const std::string& version)
-{
-  return version == "4";
-}
-
-bool isPollingTransport(const std::string& transport)
-{
-  return transport == "polling";
-}
-
-bool isWebSocketTransport(const std::string& transport)
-{
-  return transport == "websocket";
-}
-
-std::string normalizeNamespace(const std::string& nsp)
-{
-  if (nsp.empty()) {
-    return "/";
-  }
-  if (nsp[0] != '/') {
-    return "/" + nsp;
-  }
-  return nsp;
-}
-
-EngineIoControlPacket parseEngineIoControlPacket(const std::string& packet)
-{
-  if (packet == "1") {
-    return EngineIoControlPacket::close;
-  }
-  if (packet == "2") {
-    return EngineIoControlPacket::ping;
-  }
-  if (packet == "3") {
-    return EngineIoControlPacket::pong;
-  }
-  if (packet == "6") {
-    return EngineIoControlPacket::noop;
-  }
-  return EngineIoControlPacket::unknown;
-}
 
 SocketIoPacketType parseSocketIoPacketType(const std::string& packet)
 {
@@ -83,34 +40,14 @@ SocketIoPacketType parseSocketIoPacketType(const std::string& packet)
   return SocketIoPacketType::unknown;
 }
 
-std::string toWirePacket(EngineIoControlPacket packetType)
+std::size_t socketIoPayloadStartOffset(SocketIoPacketType packetType)
 {
-  if (packetType == EngineIoControlPacket::ping) {
-    return "2";
+  if (packetType == SocketIoPacketType::connect || packetType == SocketIoPacketType::event ||
+      packetType == SocketIoPacketType::ack || packetType == SocketIoPacketType::binaryEvent ||
+      packetType == SocketIoPacketType::binaryAck) {
+    return 2;
   }
-  if (packetType == EngineIoControlPacket::pong) {
-    return "3";
-  }
-  if (packetType == EngineIoControlPacket::noop) {
-    return "6";
-  }
-  return "";
-}
-
-std::string makeEngineIoOpenPacket(const std::string& sid)
-{
-  return "0{\"sid\":\"" + sid +
-         "\",\"upgrades\":[\"websocket\"],\"pingInterval\":25000,\"pingTimeout\":20000,\"maxPayload\":1000000}";
-}
-
-std::string makeEngineIoProbePongPacket()
-{
-  return "3probe";
-}
-
-std::string makeEngineIoUpgradePacket()
-{
-  return "5";
+  return 0;
 }
 
 std::string makeSocketIoConnectPacket(const std::string& sid, const std::string& nsp)
@@ -142,53 +79,6 @@ std::string makeSocketIoEventPacket(
 bool hasPingEventName(const std::string& payload)
 {
   return payload.find("\"ping\"") != std::string::npos;
-}
-
-bool isEngineIoProbePingPacket(const std::string& packet)
-{
-  return packet == "2probe";
-}
-
-bool isEngineIoUpgradePacket(const std::string& packet)
-{
-  return packet == "5";
-}
-
-std::size_t socketIoPayloadStartOffset(SocketIoPacketType packetType)
-{
-  if (packetType == SocketIoPacketType::connect || packetType == SocketIoPacketType::event ||
-      packetType == SocketIoPacketType::ack || packetType == SocketIoPacketType::binaryEvent ||
-      packetType == SocketIoPacketType::binaryAck) {
-    return 2;
-  }
-  return 0;
-}
-
-std::string parseSocketIoNamespace(const std::string& packet)
-{
-  const SocketIoPacketType packetType = parseSocketIoPacketType(packet);
-  if (packetType == SocketIoPacketType::unknown) {
-    return "/";
-  }
-
-  std::size_t pos = socketIoPayloadStartOffset(packetType);
-  if (packetType == SocketIoPacketType::binaryEvent || packetType == SocketIoPacketType::binaryAck) {
-    const std::size_t dashPos = packet.find('-', pos);
-    if (dashPos == std::string::npos) {
-      return "/";
-    }
-    pos = dashPos + 1;
-  }
-
-  if (pos >= packet.size() || packet[pos] != '/') {
-    return "/";
-  }
-
-  const std::size_t endPos = packet.find(',', pos);
-  if (endPos == std::string::npos) {
-    return normalizeNamespace(packet.substr(pos));
-  }
-  return normalizeNamespace(packet.substr(pos, endPos - pos));
 }
 
 bool parseSocketIoEventPacket(const std::string& packet, SocketIoEventPacket& eventPacketOut)

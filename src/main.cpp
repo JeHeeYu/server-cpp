@@ -2,7 +2,7 @@
 #include <cstdlib>
 #include <string>
 
-#include "protocol.h"
+#include "protocol/types.h"
 #include "server.h"
 
 int main()

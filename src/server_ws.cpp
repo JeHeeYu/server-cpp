@@ -1,5 +1,5 @@
 #include "server.h"
-#include "protocol.h"
+#include "protocol/types.h"
 #include "utils/websocket_util.h"
 
 #include <sys/socket.h>

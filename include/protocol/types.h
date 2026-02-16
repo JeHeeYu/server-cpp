@@ -18,7 +18,9 @@ enum class SocketIoPacketType {
   connect,
   disconnect,
   event,
-  ack
+  ack,
+  binaryEvent,
+  binaryAck
 };
 
 bool isEngineIoVersion4(const std::string& version);
@@ -50,6 +52,8 @@ struct SocketIoEventPacket {
   std::string nsp = "/";
   std::string ackId;
   std::string eventPayload;
+  int attachmentCount = 0;
+  bool isBinary = false;
 };
 
 bool parseSocketIoEventPacket(

@@ -1,5 +1,5 @@
 #include "server.h"
-#include "protocol.h"
+#include "protocol/types.h"
 #include "utils/http_util.h"
 #include "utils/url_util.h"
 
