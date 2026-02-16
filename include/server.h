@@ -32,6 +32,8 @@ class Server {
   };
 
   void acceptLoop();
+  void handleClient(int clientFd);
+  void processEngineIoPacket(const std::string& sid, const std::string& packet);
   std::string createSession();
   bool handleHttpRequest(const std::string& request, std::string& response);
   void enqueuePacket(const std::string& sid, const std::string& packet);

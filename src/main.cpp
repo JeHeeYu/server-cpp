@@ -2,7 +2,7 @@
 #include <cstdlib>
 #include <string>
 
-#include "server.hpp"
+#include "server.h"
 
 int main()
 {

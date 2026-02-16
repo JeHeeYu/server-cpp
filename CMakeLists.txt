@@ -10,6 +10,7 @@ add_library(socketIoServerCore
   src/utils/url_util.cpp
   src/utils/engine_io_util.cpp
   src/server.cpp
+  src/server_http.cpp
 )
 
 target_include_directories(socketIoServerCore
