@@ -373,6 +373,12 @@ void Server::joinRoom(const std::string& sid, const std::string& nsp, const std:
   if (room.empty()) {
     return;
   }
+  if (room.size() > config.maxRoomNameLength) {
+    enqueuePacket(
+        sid, protocol::makeSocketIoErrorEventPacket(
+                 protocol::normalizeNamespace(nsp), constants::kCodeRoomNameTooLong, constants::kMessageRoomNameTooLong));
+    return;
+  }
 
   const std::string roomKey = makeRoomKey(nsp, room);
   const std::string normalizedNsp = protocol::normalizeNamespace(nsp);
@@ -392,6 +398,12 @@ void Server::joinRoom(const std::string& sid, const std::string& nsp, const std:
 void Server::leaveRoom(const std::string& sid, const std::string& nsp, const std::string& room)
 {
   if (room.empty()) {
+    return;
+  }
+  if (room.size() > config.maxRoomNameLength) {
+    enqueuePacket(
+        sid, protocol::makeSocketIoErrorEventPacket(
+                 protocol::normalizeNamespace(nsp), constants::kCodeRoomNameTooLong, constants::kMessageRoomNameTooLong));
     return;
   }
   const std::string roomKey = makeRoomKey(nsp, room);
@@ -470,9 +482,19 @@ void Server::dispatchSocketIoEventData(
     const std::string& sid, const std::string& nsp, const std::string& ackId, const std::string& eventName,
     const std::string& eventData, const std::function<void(const std::string&)>& sendPacket)
 {
+  if (nsp.size() > config.maxNamespaceLength) {
+    sendPacket(protocol::makeSocketIoErrorEventPacket(
+        "/", constants::kCodeNamespaceTooLong, constants::kMessageNamespaceTooLong));
+    return;
+  }
   if (eventName.empty()) {
     sendPacket(
         protocol::makeSocketIoErrorEventPacket(nsp, constants::kCodeEmptyEventName, constants::kMessageEmptyEventName));
+    return;
+  }
+  if (eventName.size() > config.maxEventNameLength) {
+    sendPacket(protocol::makeSocketIoErrorEventPacket(
+        nsp, constants::kCodeEventNameTooLong, constants::kMessageEventNameTooLong));
     return;
   }
 

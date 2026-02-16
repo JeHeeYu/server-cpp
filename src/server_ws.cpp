@@ -290,6 +290,15 @@ void Server::serveWebSocket(int clientFd, const std::string& sid)
         }
         continue;
       }
+      if (connectPacket.nsp.size() > config.maxNamespaceLength) {
+        if (!utils::sendWebSocketTextFrame(
+                clientFd,
+                protocol::makeSocketIoConnectErrorPacket(
+                    "/", constants::kCodeNamespaceTooLong, constants::kMessageNamespaceTooLong))) {
+          break;
+        }
+        continue;
+      }
 
       const ConnectDecision decision = evaluateNamespaceConnect(sid, connectPacket.nsp, connectPacket.authJson);
       if (!decision.allowed) {

@@ -28,12 +28,16 @@ struct ServerConfig {
   std::uint32_t sessionRecoveryMs = 30000;
   std::size_t maxInboundPacketsPerSecond = 512;
   std::size_t maxPacketsPerPollingPost = 256;
+  std::size_t maxPollingBodyBytes = 2 * 1024 * 1024;
   std::size_t maxOutgoingPacketsPerSession = 1024;
   OutgoingOverflowPolicy outgoingOverflowPolicy = OutgoingOverflowPolicy::dropOldest;
   std::size_t maxIncomingPacketBytes = 1024 * 1024;
   std::size_t maxBinaryAttachmentsPerEvent = 16;
   std::size_t maxBinaryAttachmentBytes = 2 * 1024 * 1024;
   std::size_t maxBinaryTotalBytesPerEvent = 8 * 1024 * 1024;
+  std::size_t maxNamespaceLength = 128;
+  std::size_t maxEventNameLength = 128;
+  std::size_t maxRoomNameLength = 128;
 };
 
 class Server {

@@ -146,6 +146,12 @@ void Server::processEngineIoPacket(const std::string& sid, const std::string& pa
                    "/", constants::kCodeMalformedConnectPacket, constants::kMessageMalformedConnectPacket));
       return;
     }
+    if (connectPacket.nsp.size() > config.maxNamespaceLength) {
+      enqueuePacket(
+          sid, protocol::makeSocketIoConnectErrorPacket(
+                   "/", constants::kCodeNamespaceTooLong, constants::kMessageNamespaceTooLong));
+      return;
+    }
 
     const ConnectDecision decision = evaluateNamespaceConnect(sid, connectPacket.nsp, connectPacket.authJson);
     if (!decision.allowed) {
@@ -288,6 +294,10 @@ bool Server::handleHttpRequest(const std::string& request, std::string& response
     touchSession(sid);
 
     const std::string body = utils::parseRequestBody(request);
+    if (config.maxPollingBodyBytes > 0 && body.size() > config.maxPollingBodyBytes) {
+      response = utils::makeHttpResponse(constants::kHttpStatusPayloadTooLarge, constants::kMessagePayloadTooLarge);
+      return true;
+    }
     const auto packets = utils::splitEngineIoPayload(body);
     if (config.maxPacketsPerPollingPost > 0 && packets.size() > config.maxPacketsPerPollingPost) {
       response = utils::makeHttpResponse(constants::kHttpStatusPayloadTooLarge, constants::kBodyTooManyPackets);

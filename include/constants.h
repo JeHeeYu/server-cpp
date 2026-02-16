@@ -28,6 +28,9 @@ inline constexpr int kCodeOutgoingQueueOverflow = 4008;
 inline constexpr int kCodePayloadTooLarge = 4009;
 inline constexpr int kCodeTooManyBinaryAttachments = 4010;
 inline constexpr int kCodeRateLimitExceeded = 4011;
+inline constexpr int kCodeNamespaceTooLong = 4012;
+inline constexpr int kCodeEventNameTooLong = 4013;
+inline constexpr int kCodeRoomNameTooLong = 4014;
 
 inline constexpr const char* kMessageMalformedConnectPacket = "malformed connect packet";
 inline constexpr const char* kMessageMalformedEventPacket = "malformed event packet";
@@ -39,5 +42,8 @@ inline constexpr const char* kMessageOutgoingQueueOverflow = "outgoing queue ove
 inline constexpr const char* kMessagePayloadTooLarge = "payload too large";
 inline constexpr const char* kMessageTooManyBinaryAttachments = "too many binary attachments";
 inline constexpr const char* kMessageRateLimitExceeded = "rate limit exceeded";
+inline constexpr const char* kMessageNamespaceTooLong = "namespace too long";
+inline constexpr const char* kMessageEventNameTooLong = "event name too long";
+inline constexpr const char* kMessageRoomNameTooLong = "room name too long";
 
 }  // namespace socketIoServer::constants
