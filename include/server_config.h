@@ -29,6 +29,8 @@ struct ServerConfig {
   std::size_t maxNamespaceLength = 128;
   std::size_t maxEventNameLength = 128;
   std::size_t maxRoomNameLength = 128;
+  bool enableSessionRecovery = true;
+  std::size_t maxRecoveryPacketsPerSession = 2048;
 };
 
 }  // namespace socketIoServer

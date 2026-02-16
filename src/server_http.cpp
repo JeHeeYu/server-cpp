@@ -7,6 +7,7 @@
 #include "utils/url_util.h"
 
 #include <chrono>
+#include <cstdlib>
 #include <vector>
 
 namespace socketIoServer {
@@ -14,6 +15,21 @@ namespace socketIoServer {
 namespace {
 
 constexpr const char* kSocketIoPath = "/socket.io/";
+
+bool parseOffsetValue(const std::string& raw, std::uint64_t& valueOut)
+{
+  if (raw.empty()) {
+    return false;
+  }
+
+  char* end = nullptr;
+  const unsigned long long parsed = std::strtoull(raw.c_str(), &end, 10);
+  if (end == nullptr || *end != '\0') {
+    return false;
+  }
+  valueOut = static_cast<std::uint64_t>(parsed);
+  return true;
+}
 
 }
 
@@ -328,6 +344,12 @@ bool Server::handleHttpRequest(const std::string& request, std::string& response
     }
 
     std::deque<std::string> pendingPackets;
+    std::uint64_t recoveryOffset = 0;
+    bool hasRecoveryOffset = false;
+    const auto offsetIt = query.find("offset");
+    if (offsetIt != query.end()) {
+      hasRecoveryOffset = parseOffsetValue(offsetIt->second, recoveryOffset);
+    }
     {
       std::lock_guard<std::mutex> lock(sessionsMutex);
       const auto it = sessions.find(sidIt->second);
@@ -338,7 +360,11 @@ bool Server::handleHttpRequest(const std::string& request, std::string& response
       it->second.online = true;
       it->second.disconnectedAt = std::chrono::steady_clock::time_point::min();
       it->second.lastSeenAt = std::chrono::steady_clock::now();
-      pendingPackets.swap(it->second.outgoingPackets);
+      if (config.enableSessionRecovery && hasRecoveryOffset) {
+        collectPacketsSinceOffsetUnlocked(it->second, recoveryOffset, pendingPackets);
+      } else {
+        pendingPackets.swap(it->second.outgoingPackets);
+      }
     }
 
     if (pendingPackets.empty()) {

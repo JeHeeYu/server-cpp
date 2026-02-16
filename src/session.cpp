@@ -212,6 +212,11 @@ void Server::enqueuePacket(const std::string& sid, const std::string& packet)
   }
 
   if (utils::sendWebSocketTextFrame(targetWebSocketFd, packet)) {
+    std::lock_guard<std::mutex> lock(sessionsMutex);
+    const auto it = sessions.find(sid);
+    if (it != sessions.end()) {
+      recordSentPacketUnlocked(it->second, packet);
+    }
     return;
   }
 
@@ -254,6 +259,13 @@ void Server::enqueuePacketWithPolicy(const std::string& sid, const std::string& 
 
   if (!utils::sendWebSocketTextFrame(targetWebSocketFd, packet)) {
     markSessionDisconnected(sid);
+    return;
+  }
+
+  std::lock_guard<std::mutex> lock(sessionsMutex);
+  const auto it = sessions.find(sid);
+  if (it != sessions.end()) {
+    recordSentPacketUnlocked(it->second, packet);
   }
 }
 
@@ -272,6 +284,32 @@ void Server::enqueuePacketUnlocked(SessionState& session, const std::string& pac
     }
   }
   session.outgoingPackets.push_back(packet);
+  recordSentPacketUnlocked(session, packet);
+}
+
+void Server::recordSentPacketUnlocked(SessionState& session, const std::string& packet)
+{
+  if (!config.enableSessionRecovery) {
+    return;
+  }
+
+  const std::uint64_t offset = session.nextPacketOffset++;
+  session.sentPacketHistory.emplace_back(offset, packet);
+  if (config.maxRecoveryPacketsPerSession > 0 &&
+      session.sentPacketHistory.size() > config.maxRecoveryPacketsPerSession) {
+    session.sentPacketHistory.pop_front();
+  }
+}
+
+void Server::collectPacketsSinceOffsetUnlocked(
+    const SessionState& session, std::uint64_t lastOffset, std::deque<std::string>& packetsOut) const
+{
+  packetsOut.clear();
+  for (const auto& entry : session.sentPacketHistory) {
+    if (entry.first > lastOffset) {
+      packetsOut.push_back(entry.second);
+    }
+  }
 }
 
 }  // namespace socketIoServer

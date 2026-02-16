@@ -7,6 +7,7 @@
 #include <sys/socket.h>
 
 #include <chrono>
+#include <cstdlib>
 #include <deque>
 #include <utility>
 #include <vector>
@@ -60,6 +61,18 @@ bool Server::handleWebSocketHandshake(
     directWebSocketConnection = true;
   } else {
     sid = sidIt->second;
+    std::uint64_t recoveryOffset = 0;
+    bool hasRecoveryOffset = false;
+    const auto offsetIt = query.find("offset");
+    if (offsetIt != query.end() && !offsetIt->second.empty()) {
+      char* end = nullptr;
+      const unsigned long long parsed = std::strtoull(offsetIt->second.c_str(), &end, 10);
+      if (end != nullptr && *end == '\0') {
+        recoveryOffset = static_cast<std::uint64_t>(parsed);
+        hasRecoveryOffset = true;
+      }
+    }
+
     {
       std::lock_guard<std::mutex> lock(sessionsMutex);
       const auto sessionIt = sessions.find(sid);
@@ -69,7 +82,11 @@ bool Server::handleWebSocketHandshake(
       sessionIt->second.online = true;
       sessionIt->second.lastSeenAt = std::chrono::steady_clock::now();
       sessionIt->second.disconnectedAt = std::chrono::steady_clock::time_point::min();
-      pendingPackets.swap(sessionIt->second.outgoingPackets);
+      if (config.enableSessionRecovery && hasRecoveryOffset) {
+        collectPacketsSinceOffsetUnlocked(sessionIt->second, recoveryOffset, pendingPackets);
+      } else {
+        pendingPackets.swap(sessionIt->second.outgoingPackets);
+      }
     }
   }
 

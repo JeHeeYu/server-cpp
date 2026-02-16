@@ -14,6 +14,8 @@
     std::vector<std::string> pendingBinaryAttachments;
     std::chrono::steady_clock::time_point inboundWindowStart = std::chrono::steady_clock::time_point::min();
     std::size_t inboundPacketCountInWindow = 0;
+    std::uint64_t nextPacketOffset = 1;
+    std::deque<std::pair<std::uint64_t, std::string>> sentPacketHistory;
     std::chrono::steady_clock::time_point lastSeenAt = std::chrono::steady_clock::now();
     std::chrono::steady_clock::time_point disconnectedAt = std::chrono::steady_clock::time_point::min();
   };
@@ -70,6 +72,9 @@
   void enqueuePacket(const std::string& sid, const std::string& packet);
   void enqueuePacketWithPolicy(const std::string& sid, const std::string& packet, bool isVolatile);
   void enqueuePacketUnlocked(SessionState& session, const std::string& packet);
+  void recordSentPacketUnlocked(SessionState& session, const std::string& packet);
+  void collectPacketsSinceOffsetUnlocked(
+      const SessionState& session, std::uint64_t lastOffset, std::deque<std::string>& packetsOut) const;
   void registerWebSocketClient(int clientFd, const std::string& sid);
   void unregisterWebSocketClient(int clientFd);
   void resetPendingBinaryState(SessionState& session);
