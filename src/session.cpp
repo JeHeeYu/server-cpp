@@ -45,29 +45,42 @@ void Server::markSessionDisconnected(const std::string& sid)
 
 void Server::removeSession(const std::string& sid)
 {
-  std::lock_guard<std::mutex> lock(sessionsMutex);
-  const auto roomsIt = sessionRooms.find(sid);
-  if (roomsIt != sessionRooms.end()) {
-    for (const std::string& room : roomsIt->second) {
-      const auto membersIt = roomMembers.find(room);
-      if (membersIt != roomMembers.end()) {
-        membersIt->second.erase(sid);
-        if (membersIt->second.empty()) {
-          roomMembers.erase(membersIt);
+  std::vector<ClientEventAckCallback> cancelledAckCallbacks;
+
+  {
+    std::lock_guard<std::mutex> lock(sessionsMutex);
+    const auto roomsIt = sessionRooms.find(sid);
+    if (roomsIt != sessionRooms.end()) {
+      for (const std::string& room : roomsIt->second) {
+        const auto membersIt = roomMembers.find(room);
+        if (membersIt != roomMembers.end()) {
+          membersIt->second.erase(sid);
+          if (membersIt->second.empty()) {
+            roomMembers.erase(membersIt);
+          }
         }
       }
+      sessionRooms.erase(roomsIt);
     }
-    sessionRooms.erase(roomsIt);
+    sessions.erase(sid);
   }
-  sessions.erase(sid);
 
-  std::lock_guard<std::mutex> ackLock(pendingAcksMutex);
-  for (auto it = pendingAcks.begin(); it != pendingAcks.end();) {
-    if (it->second.sid == sid) {
-      it = pendingAcks.erase(it);
-      continue;
+  {
+    std::lock_guard<std::mutex> ackLock(pendingAcksMutex);
+    for (auto it = pendingAcks.begin(); it != pendingAcks.end();) {
+      if (it->second.sid == sid) {
+        if (it->second.callback) {
+          cancelledAckCallbacks.push_back(std::move(it->second.callback));
+        }
+        it = pendingAcks.erase(it);
+        continue;
+      }
+      ++it;
     }
-    ++it;
+  }
+
+  for (const auto& callback : cancelledAckCallbacks) {
+    callback(false, "");
   }
 }
 
