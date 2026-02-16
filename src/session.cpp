@@ -202,6 +202,39 @@ void Server::enqueuePacket(const std::string& sid, const std::string& packet)
   enqueuePacketUnlocked(it->second, packet);
 }
 
+void Server::enqueuePacketWithPolicy(const std::string& sid, const std::string& packet, bool isVolatile)
+{
+  if (!isVolatile) {
+    enqueuePacket(sid, packet);
+    return;
+  }
+
+  int targetWebSocketFd = -1;
+  {
+    std::lock_guard<std::mutex> lock(sessionsMutex);
+    const auto it = sessions.find(sid);
+    if (it == sessions.end() || !it->second.online) {
+      return;
+    }
+
+    std::lock_guard<std::mutex> wsLock(webSocketClientsMutex);
+    for (const auto& entry : webSocketClients) {
+      if (entry.second == sid) {
+        targetWebSocketFd = entry.first;
+        break;
+      }
+    }
+  }
+
+  if (targetWebSocketFd < 0) {
+    return;
+  }
+
+  if (!utils::sendWebSocketTextFrame(targetWebSocketFd, packet)) {
+    markSessionDisconnected(sid);
+  }
+}
+
 void Server::enqueuePacketUnlocked(SessionState& session, const std::string& packet)
 {
   session.lastSeenAt = std::chrono::steady_clock::now();

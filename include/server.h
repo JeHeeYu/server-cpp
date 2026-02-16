@@ -65,6 +65,8 @@ class Server {
       const std::string& eventData)>;
   using NamespaceConnectHandler = std::function<ConnectDecision(
       Server& server, const std::string& sid, const std::string& nsp, const std::string& authJson)>;
+  using NamespaceMiddleware = std::function<std::optional<ConnectDecision>(
+      Server& server, const std::string& sid, const std::string& nsp, const std::string& authJson)>;
   using ClientAckHandler = std::function<void(
       Server& server, const std::string& sid, const std::string& nsp, const std::string& ackId,
       const std::string& ackPayload)>;
@@ -77,6 +79,8 @@ class Server {
   void setEventHandler(EventHandler handler);
   void setEventGuardHandler(EventGuardHandler handler);
   void setNamespaceConnectHandler(NamespaceConnectHandler handler);
+  void addNamespaceMiddleware(NamespaceMiddleware middleware);
+  void clearNamespaceMiddlewares();
   void addEventMiddleware(EventMiddleware middleware);
   void clearEventMiddlewares();
   void setClientAckHandler(ClientAckHandler handler);
@@ -86,6 +90,12 @@ class Server {
       const std::string& nsp, const std::string& room, const std::string& eventName,
       const std::string& jsonObjectPayload, const std::string& excludeSid = "");
   void emitToRoomEvent(
+      const std::string& nsp, const std::string& room, const std::string& eventName,
+      const std::string& jsonObjectPayload, const std::vector<std::string>& excludedSids);
+  void emitToRoomEventVolatile(
+      const std::string& nsp, const std::string& room, const std::string& eventName,
+      const std::string& jsonObjectPayload, const std::string& excludeSid = "");
+  void emitToRoomEventVolatile(
       const std::string& nsp, const std::string& room, const std::string& eventName,
       const std::string& jsonObjectPayload, const std::vector<std::string>& excludedSids);
 
@@ -143,8 +153,15 @@ class Server {
   void broadcastToRoom(
       const std::string& nsp, const std::string& room, const std::string& packet,
       const std::vector<std::string>& excludedSids);
+  void broadcastToRoom(
+      const std::string& nsp, const std::string& room, const std::string& packet, bool isVolatile,
+      const std::string& excludeSid = "");
+  void broadcastToRoom(
+      const std::string& nsp, const std::string& room, const std::string& packet, bool isVolatile,
+      const std::vector<std::string>& excludedSids);
   bool handleHttpRequest(const std::string& request, std::string& response);
   void enqueuePacket(const std::string& sid, const std::string& packet);
+  void enqueuePacketWithPolicy(const std::string& sid, const std::string& packet, bool isVolatile);
   void enqueuePacketUnlocked(SessionState& session, const std::string& packet);
   void registerWebSocketClient(int clientFd, const std::string& sid);
   void unregisterWebSocketClient(int clientFd);
@@ -162,11 +179,13 @@ class Server {
   std::mutex eventGuardMutex;
   std::mutex eventMiddlewareMutex;
   std::mutex connectHandlerMutex;
+  std::mutex namespaceMiddlewareMutex;
   std::mutex ackHandlerMutex;
   EventHandler eventHandler;
   EventGuardHandler eventGuardHandler;
   std::vector<EventMiddleware> eventMiddlewares;
   NamespaceConnectHandler namespaceConnectHandler;
+  std::vector<NamespaceMiddleware> namespaceMiddlewares;
   ClientAckHandler clientAckHandler;
   std::unordered_map<std::string, SessionState> sessions;
   std::unordered_map<std::string, std::unordered_set<std::string>> roomMembers;

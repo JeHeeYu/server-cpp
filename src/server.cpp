@@ -127,6 +127,18 @@ void Server::setNamespaceConnectHandler(NamespaceConnectHandler handler)
   namespaceConnectHandler = std::move(handler);
 }
 
+void Server::addNamespaceMiddleware(NamespaceMiddleware middleware)
+{
+  std::lock_guard<std::mutex> lock(namespaceMiddlewareMutex);
+  namespaceMiddlewares.push_back(std::move(middleware));
+}
+
+void Server::clearNamespaceMiddlewares()
+{
+  std::lock_guard<std::mutex> lock(namespaceMiddlewareMutex);
+  namespaceMiddlewares.clear();
+}
+
 void Server::addEventMiddleware(EventMiddleware middleware)
 {
   std::lock_guard<std::mutex> lock(eventMiddlewareMutex);
@@ -201,6 +213,24 @@ void Server::sessionLoop()
 Server::ConnectDecision Server::evaluateNamespaceConnect(
     const std::string& sid, const std::string& nsp, const std::string& authJson)
 {
+  std::vector<NamespaceMiddleware> middlewareChain;
+  {
+    std::lock_guard<std::mutex> lock(namespaceMiddlewareMutex);
+    middlewareChain = namespaceMiddlewares;
+  }
+
+  const std::string normalizedNsp = protocol::normalizeNamespace(nsp);
+  for (const auto& middleware : middlewareChain) {
+    if (!middleware) {
+      continue;
+    }
+
+    const std::optional<ConnectDecision> decision = middleware(*this, sid, normalizedNsp, authJson);
+    if (decision.has_value()) {
+      return *decision;
+    }
+  }
+
   NamespaceConnectHandler handlerCopy;
   {
     std::lock_guard<std::mutex> lock(connectHandlerMutex);
@@ -209,7 +239,7 @@ Server::ConnectDecision Server::evaluateNamespaceConnect(
   if (!handlerCopy) {
     return ConnectDecision{};
   }
-  return handlerCopy(*this, sid, protocol::normalizeNamespace(nsp), authJson);
+  return handlerCopy(*this, sid, normalizedNsp, authJson);
 }
 
 Server::ConnectDecision Server::evaluateEventGuard(
