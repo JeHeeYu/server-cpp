@@ -73,6 +73,13 @@ void Server::processEngineIoPacket(const std::string& sid, const std::string& pa
       }
       session.pendingBinaryAttachments.push_back(encodedBinary);
       session.pendingBinaryTotalBytes += encodedBinary.size();
+      if (session.pendingBinaryTotalBytes > config.maxBinaryTotalBytesPerEvent) {
+        appendOutgoingPacketUnlocked(
+            session, protocol::makeSocketIoErrorEventPacket(
+                         session.pendingBinaryNsp, constants::kCodePayloadTooLarge, constants::kMessagePayloadTooLarge));
+        resetPendingBinaryState(session);
+        return;
+      }
       if (session.pendingBinaryAttachments.size() > config.maxBinaryAttachmentsPerEvent) {
         appendOutgoingPacketUnlocked(
             session, protocol::makeSocketIoErrorEventPacket(

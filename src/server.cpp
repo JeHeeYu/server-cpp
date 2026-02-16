@@ -481,12 +481,14 @@ void Server::enqueuePacket(const std::string& sid, const std::string& packet)
     return;
   }
   it->second.lastSeenAt = std::chrono::steady_clock::now();
+  it->second.online = true;
+  it->second.disconnectedAt = std::chrono::steady_clock::time_point::min();
   if (config.maxOutgoingPacketsPerSession > 0 &&
       it->second.outgoingPackets.size() >= config.maxOutgoingPacketsPerSession) {
-    it->second.outgoingPackets.pop_front();
-    it->second.outgoingPackets.push_back(protocol::makeSocketIoErrorEventPacket(
-        "/", constants::kCodeOutgoingQueueOverflow, constants::kMessageOutgoingQueueOverflow));
-    if (it->second.outgoingPackets.size() >= config.maxOutgoingPacketsPerSession) {
+    if (config.outgoingOverflowPolicy == ServerConfig::OutgoingOverflowPolicy::dropNewest) {
+      return;
+    }
+    if (!it->second.outgoingPackets.empty()) {
       it->second.outgoingPackets.pop_front();
     }
   }

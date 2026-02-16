@@ -7,6 +7,7 @@
 #include <sys/socket.h>
 
 #include <chrono>
+#include <deque>
 #include <utility>
 #include <vector>
 
@@ -44,6 +45,7 @@ bool Server::handleWebSocketHandshake(
 
   auto sidIt = query.find("sid");
   std::string sid;
+  std::deque<std::string> pendingPackets;
   bool directWebSocketConnection = false;
   if (sidIt == query.end()) {
     sid = createSession();
@@ -58,15 +60,27 @@ bool Server::handleWebSocketHandshake(
     directWebSocketConnection = true;
   } else {
     sid = sidIt->second;
-    if (!hasSession(sid)) {
-      return false;
+    {
+      std::lock_guard<std::mutex> lock(sessionsMutex);
+      const auto sessionIt = sessions.find(sid);
+      if (sessionIt == sessions.end()) {
+        return false;
+      }
+      sessionIt->second.online = true;
+      sessionIt->second.lastSeenAt = std::chrono::steady_clock::now();
+      sessionIt->second.disconnectedAt = std::chrono::steady_clock::time_point::min();
+      pendingPackets.swap(sessionIt->second.outgoingPackets);
     }
-    touchSession(sid);
   }
 
   if (directWebSocketConnection) {
     const std::string openPacket = protocol::makeEngineIoOpenPacket(sid);
     if (!utils::sendWebSocketTextFrame(clientFd, openPacket)) {
+      return false;
+    }
+  }
+  for (const std::string& pendingPacket : pendingPackets) {
+    if (!utils::sendWebSocketTextFrame(clientFd, pendingPacket)) {
       return false;
     }
   }
@@ -81,6 +95,7 @@ void Server::serveWebSocket(int clientFd, const std::string& sid)
 {
   protocol::SocketIoEventPacket pendingBinaryEvent;
   std::vector<std::string> pendingBinaryAttachments;
+  std::size_t pendingBinaryTotalBytes = 0;
   bool hasPendingBinaryEvent = false;
 
   while (running.load()) {
@@ -120,9 +135,11 @@ void Server::serveWebSocket(int clientFd, const std::string& sid)
         }
         hasPendingBinaryEvent = false;
         pendingBinaryAttachments.clear();
+        pendingBinaryTotalBytes = 0;
         continue;
       }
       pendingBinaryAttachments.push_back(utils::encodeBase64(packet));
+      pendingBinaryTotalBytes += packet.size();
       if (pendingBinaryAttachments.size() > config.maxBinaryAttachmentsPerEvent) {
         if (!utils::sendWebSocketTextFrame(
                 clientFd,
@@ -133,6 +150,19 @@ void Server::serveWebSocket(int clientFd, const std::string& sid)
         }
         hasPendingBinaryEvent = false;
         pendingBinaryAttachments.clear();
+        pendingBinaryTotalBytes = 0;
+        continue;
+      }
+      if (pendingBinaryTotalBytes > config.maxBinaryTotalBytesPerEvent) {
+        if (!utils::sendWebSocketTextFrame(
+                clientFd,
+                protocol::makeSocketIoErrorEventPacket(
+                    pendingBinaryEvent.nsp, constants::kCodePayloadTooLarge, constants::kMessagePayloadTooLarge))) {
+          break;
+        }
+        hasPendingBinaryEvent = false;
+        pendingBinaryAttachments.clear();
+        pendingBinaryTotalBytes = 0;
         continue;
       }
       if (pendingBinaryAttachments.size() > static_cast<std::size_t>(pendingBinaryEvent.attachmentCount)) {
@@ -145,6 +175,7 @@ void Server::serveWebSocket(int clientFd, const std::string& sid)
         }
         hasPendingBinaryEvent = false;
         pendingBinaryAttachments.clear();
+        pendingBinaryTotalBytes = 0;
         continue;
       }
 
@@ -164,6 +195,7 @@ void Server::serveWebSocket(int clientFd, const std::string& sid)
             });
         hasPendingBinaryEvent = false;
         pendingBinaryAttachments.clear();
+        pendingBinaryTotalBytes = 0;
         if (sendFailed) {
           break;
         }
@@ -224,6 +256,7 @@ void Server::serveWebSocket(int clientFd, const std::string& sid)
       }
       hasPendingBinaryEvent = false;
       pendingBinaryAttachments.clear();
+      pendingBinaryTotalBytes = 0;
       continue;
     }
 
@@ -269,6 +302,7 @@ void Server::serveWebSocket(int clientFd, const std::string& sid)
         }
         hasPendingBinaryEvent = false;
         pendingBinaryAttachments.clear();
+        pendingBinaryTotalBytes = 0;
       }
 
       if (packetType == protocol::SocketIoPacketType::binaryEvent) {
@@ -306,6 +340,7 @@ void Server::serveWebSocket(int clientFd, const std::string& sid)
         hasPendingBinaryEvent = true;
         pendingBinaryEvent = std::move(parsedBinaryEvent);
         pendingBinaryAttachments.clear();
+        pendingBinaryTotalBytes = 0;
         continue;
       }
 
