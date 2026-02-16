@@ -1,5 +1,8 @@
 #include "protocol/types.h"
 
+#include <boost/json.hpp>
+#include <boost/system/error_code.hpp>
+
 #include <cstdlib>
 
 namespace socketIoServer::protocol {
@@ -162,45 +165,53 @@ bool parseSocketIoEventPacket(const std::string& packet, SocketIoEventPacket& ev
 
 std::string parseSocketIoEventName(const std::string& eventPayload)
 {
-  const std::string prefix = "[\"";
-  const std::size_t start = eventPayload.find(prefix);
-  if (start == std::string::npos) {
+  boost::system::error_code ec;
+  const boost::json::value parsed = boost::json::parse(eventPayload, ec);
+  if (ec || !parsed.is_array()) {
     return "";
   }
-  const std::size_t nameStart = start + prefix.size();
-  const std::size_t nameEnd = eventPayload.find('"', nameStart);
-  if (nameEnd == std::string::npos || nameEnd <= nameStart) {
+
+  const boost::json::array& payloadArray = parsed.as_array();
+  if (payloadArray.empty() || !payloadArray[0].is_string()) {
     return "";
   }
-  return eventPayload.substr(nameStart, nameEnd - nameStart);
+  return std::string(payloadArray[0].as_string().c_str());
 }
 
 std::string parseSocketIoEventData(const std::string& eventPayload)
 {
-  const std::size_t commaPos = eventPayload.find(',');
-  if (commaPos == std::string::npos) {
+  boost::system::error_code ec;
+  const boost::json::value parsed = boost::json::parse(eventPayload, ec);
+  if (ec || !parsed.is_array()) {
     return "";
   }
-  const std::size_t endPos = eventPayload.rfind(']');
-  if (endPos == std::string::npos || endPos <= commaPos + 1) {
+
+  const boost::json::array& payloadArray = parsed.as_array();
+  if (payloadArray.size() < 2) {
     return "";
   }
-  return eventPayload.substr(commaPos + 1, endPos - commaPos - 1);
+  return boost::json::serialize(payloadArray[1]);
 }
 
 std::string parseSocketIoStringField(const std::string& eventPayload, const std::string& fieldName)
 {
-  const std::string needle = "\"" + fieldName + "\":\"";
-  const std::size_t start = eventPayload.find(needle);
-  if (start == std::string::npos) {
+  if (fieldName.empty()) {
     return "";
   }
-  const std::size_t valueStart = start + needle.size();
-  const std::size_t valueEnd = eventPayload.find('"', valueStart);
-  if (valueEnd == std::string::npos || valueEnd <= valueStart) {
+
+  boost::system::error_code ec;
+  const boost::json::value parsed = boost::json::parse(eventPayload, ec);
+  if (ec || !parsed.is_object()) {
     return "";
   }
-  return eventPayload.substr(valueStart, valueEnd - valueStart);
+
+  const boost::json::object& payloadObject = parsed.as_object();
+  const auto it = payloadObject.find(fieldName);
+  if (it == payloadObject.end() || !it->value().is_string()) {
+    return "";
+  }
+
+  return std::string(it->value().as_string().c_str());
 }
 
 }  // namespace socketIoServer::protocol

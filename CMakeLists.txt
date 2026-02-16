@@ -1,9 +1,16 @@
 cmake_minimum_required(VERSION 3.16)
 project(socketIoServerCpp LANGUAGES CXX)
 
+if(POLICY CMP0167)
+  cmake_policy(SET CMP0167 NEW)
+endif()
+
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+
+find_package(Boost 1.75 CONFIG REQUIRED COMPONENTS json)
 
 add_library(socketIoServerCore
   src/protocol/engine_io.cpp
@@ -21,6 +28,10 @@ add_library(socketIoServerCore
 target_include_directories(socketIoServerCore
   PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+target_link_libraries(socketIoServerCore
+  PUBLIC
+    Boost::json
 )
 
 add_executable(socketIoServerCpp src/main.cpp)
