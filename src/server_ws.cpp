@@ -4,6 +4,8 @@
 
 #include <sys/socket.h>
 
+#include <chrono>
+
 namespace socketIoServer {
 
 bool Server::handleWebSocketHandshake(
@@ -43,6 +45,7 @@ bool Server::handleWebSocketHandshake(
     sid = createSession();
     SessionState session;
     session.sid = sid;
+    session.lastSeenAt = std::chrono::steady_clock::now();
     {
       std::lock_guard<std::mutex> lock(sessionsMutex);
       sessions.emplace(sid, std::move(session));
@@ -50,10 +53,10 @@ bool Server::handleWebSocketHandshake(
     directWebSocketConnection = true;
   } else {
     sid = sidIt->second;
-    std::lock_guard<std::mutex> lock(sessionsMutex);
-    if (sessions.find(sid) == sessions.end()) {
+    if (!hasSession(sid)) {
       return false;
     }
+    touchSession(sid);
   }
 
   if (directWebSocketConnection) {
@@ -79,6 +82,8 @@ void Server::serveWebSocket(int clientFd, const std::string& sid)
       continue;
     }
 
+    touchSession(sid);
+
     if (protocol::isEngineIoProbePingPacket(packet)) {
       if (!utils::sendWebSocketTextFrame(clientFd, protocol::makeEngineIoProbePongPacket())) {
         break;
@@ -91,6 +96,10 @@ void Server::serveWebSocket(int clientFd, const std::string& sid)
     }
 
     const protocol::EngineIoControlPacket controlType = protocol::parseEngineIoControlPacket(packet);
+    if (controlType == protocol::EngineIoControlPacket::close) {
+      removeSession(sid);
+      break;
+    }
     if (controlType == protocol::EngineIoControlPacket::ping) {
       if (!utils::sendWebSocketTextFrame(clientFd, protocol::toWirePacket(protocol::EngineIoControlPacket::pong))) {
         break;
@@ -128,7 +137,14 @@ void Server::serveWebSocket(int clientFd, const std::string& sid)
       }
       continue;
     }
+
+    if (packetType == protocol::SocketIoPacketType::disconnect) {
+      removeSession(sid);
+      break;
+    }
   }
+
+  removeSession(sid);
 }
 
 }  // namespace socketIoServer

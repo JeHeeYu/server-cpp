@@ -19,6 +19,9 @@ bool isWebSocketTransport(const std::string& transport)
 
 EngineIoControlPacket parseEngineIoControlPacket(const std::string& packet)
 {
+  if (packet == "1") {
+    return EngineIoControlPacket::close;
+  }
   if (packet == "2") {
     return EngineIoControlPacket::ping;
   }
@@ -35,6 +38,9 @@ SocketIoPacketType parseSocketIoPacketType(const std::string& packet)
 {
   if (packet.rfind("40", 0) == 0) {
     return SocketIoPacketType::connect;
+  }
+  if (packet.rfind("41", 0) == 0) {
+    return SocketIoPacketType::disconnect;
   }
   if (packet.rfind("42", 0) == 0) {
     return SocketIoPacketType::event;

@@ -7,6 +7,7 @@ namespace socketIoServer::protocol {
 
 enum class EngineIoControlPacket {
   unknown,
+  close,
   ping,
   pong,
   noop
@@ -15,6 +16,7 @@ enum class EngineIoControlPacket {
 enum class SocketIoPacketType {
   unknown,
   connect,
+  disconnect,
   event,
   ack
 };

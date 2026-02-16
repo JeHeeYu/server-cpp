@@ -8,8 +8,10 @@
 #include <unistd.h>
 
 #include <cerrno>
+#include <chrono>
 #include <cstdint>
 #include <string>
+#include <thread>
 #include <utility>
 
 namespace socketIoServer {
@@ -58,6 +60,7 @@ bool Server::start()
   listenFd = fd;
   running.store(true);
   acceptThread = std::thread(&Server::acceptLoop, this);
+  sessionThread = std::thread(&Server::sessionLoop, this);
   return true;
 }
 
@@ -75,6 +78,10 @@ void Server::stop()
 
   if (acceptThread.joinable()) {
     acceptThread.join();
+  }
+
+  if (sessionThread.joinable()) {
+    sessionThread.join();
   }
 }
 
@@ -101,10 +108,56 @@ void Server::acceptLoop()
   }
 }
 
+void Server::sessionLoop()
+{
+  while (running.load()) {
+    std::this_thread::sleep_for(std::chrono::seconds(1));
+    const auto now = std::chrono::steady_clock::now();
+    const auto ttl = sessionTtl();
+
+    std::lock_guard<std::mutex> lock(sessionsMutex);
+    for (auto it = sessions.begin(); it != sessions.end();) {
+      const auto idle = std::chrono::duration_cast<std::chrono::milliseconds>(now - it->second.lastSeenAt);
+      if (idle > ttl) {
+        it = sessions.erase(it);
+      } else {
+        ++it;
+      }
+    }
+  }
+}
+
 std::string Server::createSession()
 {
   const std::uint64_t id = nextSid.fetch_add(1);
   return "sid" + std::to_string(id);
+}
+
+bool Server::hasSession(const std::string& sid)
+{
+  std::lock_guard<std::mutex> lock(sessionsMutex);
+  return sessions.find(sid) != sessions.end();
+}
+
+void Server::touchSession(const std::string& sid)
+{
+  std::lock_guard<std::mutex> lock(sessionsMutex);
+  const auto it = sessions.find(sid);
+  if (it != sessions.end()) {
+    it->second.lastSeenAt = std::chrono::steady_clock::now();
+  }
+}
+
+void Server::removeSession(const std::string& sid)
+{
+  std::lock_guard<std::mutex> lock(sessionsMutex);
+  sessions.erase(sid);
+}
+
+std::chrono::milliseconds Server::sessionTtl() const
+{
+  return std::chrono::milliseconds(
+      static_cast<std::uint64_t>(config.pingIntervalMs) + static_cast<std::uint64_t>(config.pingTimeoutMs));
 }
 
 void Server::enqueuePacket(const std::string& sid, const std::string& packet)
@@ -114,6 +167,7 @@ void Server::enqueuePacket(const std::string& sid, const std::string& packet)
   if (it == sessions.end()) {
     return;
   }
+  it->second.lastSeenAt = std::chrono::steady_clock::now();
   it->second.outgoingPackets.push_back(packet);
 }
 

@@ -4,6 +4,8 @@
 #include "utils/http_util.h"
 #include "utils/url_util.h"
 
+#include <chrono>
+
 namespace socketIoServer {
 
 namespace {
@@ -18,8 +20,14 @@ void Server::processEngineIoPacket(const std::string& sid, const std::string& pa
     return;
   }
 
+  touchSession(sid);
+
   const protocol::SocketIoPacketType packetType = protocol::parseSocketIoPacketType(packet);
   const protocol::EngineIoControlPacket controlType = protocol::parseEngineIoControlPacket(packet);
+  if (controlType == protocol::EngineIoControlPacket::close) {
+    removeSession(sid);
+    return;
+  }
   if (controlType == protocol::EngineIoControlPacket::ping) {
     enqueuePacket(sid, protocol::toWirePacket(protocol::EngineIoControlPacket::pong));
     return;
@@ -34,6 +42,11 @@ void Server::processEngineIoPacket(const std::string& sid, const std::string& pa
       }
     }
     enqueuePacket(sid, protocol::makeSocketIoConnectPacket(sid));
+    return;
+  }
+
+  if (packetType == protocol::SocketIoPacketType::disconnect) {
+    removeSession(sid);
     return;
   }
 
@@ -89,6 +102,7 @@ bool Server::handleHttpRequest(const std::string& request, std::string& response
       const std::string sid = createSession();
       SessionState session;
       session.sid = sid;
+      session.lastSeenAt = std::chrono::steady_clock::now();
       {
         std::lock_guard<std::mutex> lock(sessionsMutex);
         sessions.emplace(sid, std::move(session));
@@ -106,6 +120,7 @@ bool Server::handleHttpRequest(const std::string& request, std::string& response
         response = utils::makeHttpResponse("400 Bad Request", "unknown sid");
         return true;
       }
+      it->second.lastSeenAt = std::chrono::steady_clock::now();
       pendingPackets.swap(it->second.outgoingPackets);
     }
 
@@ -126,13 +141,11 @@ bool Server::handleHttpRequest(const std::string& request, std::string& response
     }
 
     const std::string sid = sidIt->second;
-    {
-      std::lock_guard<std::mutex> lock(sessionsMutex);
-      if (sessions.find(sid) == sessions.end()) {
-        response = utils::makeHttpResponse("400 Bad Request", "unknown sid");
-        return true;
-      }
+    if (!hasSession(sid)) {
+      response = utils::makeHttpResponse("400 Bad Request", "unknown sid");
+      return true;
     }
+    touchSession(sid);
 
     const std::string body = utils::parseRequestBody(request);
     const auto packets = utils::splitEngineIoPayload(body);
