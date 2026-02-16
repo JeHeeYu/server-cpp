@@ -17,6 +17,7 @@ inline constexpr const char* kBodyUnknownSid = "unknown sid";
 inline constexpr const char* kBodyOk = "ok";
 inline constexpr const char* kBodyMethodNotAllowed = "method not allowed";
 inline constexpr const char* kBodyTooManyPackets = "too many packets in single post";
+inline constexpr const char* kBodyInvalidRecoveryContext = "invalid recovery context";
 
 inline constexpr int kCodeMalformedConnectPacket = 4001;
 inline constexpr int kCodeMalformedEventPacket = 4002;
@@ -31,6 +32,7 @@ inline constexpr int kCodeRateLimitExceeded = 4011;
 inline constexpr int kCodeNamespaceTooLong = 4012;
 inline constexpr int kCodeEventNameTooLong = 4013;
 inline constexpr int kCodeRoomNameTooLong = 4014;
+inline constexpr int kCodeInvalidRecoveryContext = 4015;
 
 inline constexpr const char* kMessageMalformedConnectPacket = "malformed connect packet";
 inline constexpr const char* kMessageMalformedEventPacket = "malformed event packet";
@@ -45,5 +47,6 @@ inline constexpr const char* kMessageRateLimitExceeded = "rate limit exceeded";
 inline constexpr const char* kMessageNamespaceTooLong = "namespace too long";
 inline constexpr const char* kMessageEventNameTooLong = "event name too long";
 inline constexpr const char* kMessageRoomNameTooLong = "room name too long";
+inline constexpr const char* kMessageInvalidRecoveryContext = "invalid recovery context";
 
 }  // namespace socketIoServer::constants

@@ -14,6 +14,25 @@
 
 namespace socketIoServer {
 
+namespace {
+
+bool parseOffsetValue(const std::string& raw, std::uint64_t& valueOut)
+{
+  if (raw.empty()) {
+    return false;
+  }
+
+  char* end = nullptr;
+  const unsigned long long parsed = std::strtoull(raw.c_str(), &end, 10);
+  if (end == nullptr || *end != '\0') {
+    return false;
+  }
+  valueOut = static_cast<std::uint64_t>(parsed);
+  return true;
+}
+
+}
+
 bool Server::handleWebSocketHandshake(
     int clientFd, const std::string& request, const std::unordered_map<std::string, std::string>& query)
 {
@@ -67,12 +86,10 @@ bool Server::handleWebSocketHandshake(
     std::uint64_t recoveryOffset = 0;
     bool hasRecoveryOffset = false;
     const auto offsetIt = query.find("offset");
-    if (offsetIt != query.end() && !offsetIt->second.empty()) {
-      char* end = nullptr;
-      const unsigned long long parsed = std::strtoull(offsetIt->second.c_str(), &end, 10);
-      if (end != nullptr && *end == '\0') {
-        recoveryOffset = static_cast<std::uint64_t>(parsed);
-        hasRecoveryOffset = true;
+    if (offsetIt != query.end()) {
+      hasRecoveryOffset = parseOffsetValue(offsetIt->second, recoveryOffset);
+      if (!hasRecoveryOffset) {
+        return false;
       }
     }
 
@@ -90,7 +107,7 @@ bool Server::handleWebSocketHandshake(
       const auto privateIdIt = query.find("pid");
       if (recoveryAllowed) {
         if (privateIdIt == query.end() || privateIdIt->second != sessionIt->second.privateId) {
-          recoveryAllowed = false;
+          return false;
         }
       }
       if (recoveryAllowed) {

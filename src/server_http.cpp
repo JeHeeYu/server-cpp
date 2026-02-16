@@ -352,6 +352,10 @@ bool Server::handleHttpRequest(const std::string& request, std::string& response
     const auto offsetIt = query.find("offset");
     if (offsetIt != query.end()) {
       hasRecoveryOffset = parseOffsetValue(offsetIt->second, recoveryOffset);
+      if (!hasRecoveryOffset) {
+        response = utils::makeHttpResponse(constants::kHttpStatusBadRequest, constants::kBodyInvalidRecoveryContext);
+        return true;
+      }
     }
     {
       std::lock_guard<std::mutex> lock(sessionsMutex);
@@ -367,7 +371,8 @@ bool Server::handleHttpRequest(const std::string& request, std::string& response
       const auto privateIdIt = query.find("pid");
       if (recoveryAllowed) {
         if (privateIdIt == query.end() || privateIdIt->second != it->second.privateId) {
-          recoveryAllowed = false;
+          response = utils::makeHttpResponse(constants::kHttpStatusBadRequest, constants::kBodyInvalidRecoveryContext);
+          return true;
         }
       }
       if (recoveryAllowed) {
