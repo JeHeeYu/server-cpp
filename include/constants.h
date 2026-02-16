@@ -20,10 +20,14 @@ inline constexpr int kCodeMalformedConnectPacket = 4001;
 inline constexpr int kCodeMalformedEventPacket = 4002;
 inline constexpr int kCodeNamespaceNotConnected = 4003;
 inline constexpr int kCodeEmptyEventName = 4004;
+inline constexpr int kCodeBinaryAttachmentOutOfOrder = 4006;
+inline constexpr int kCodeBinaryAttachmentCountMismatch = 4007;
 
 inline constexpr const char* kMessageMalformedConnectPacket = "malformed connect packet";
 inline constexpr const char* kMessageMalformedEventPacket = "malformed event packet";
 inline constexpr const char* kMessageNamespaceNotConnected = "namespace not connected";
 inline constexpr const char* kMessageEmptyEventName = "empty event name";
+inline constexpr const char* kMessageBinaryAttachmentOutOfOrder = "binary attachment out of order";
+inline constexpr const char* kMessageBinaryAttachmentCountMismatch = "binary attachment count mismatch";
 
 }  // namespace socketIoServer::constants

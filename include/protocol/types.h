@@ -3,6 +3,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <string>
+#include <vector>
 
 namespace socketIoServer::protocol {
 
@@ -97,5 +98,7 @@ bool parseSocketIoEventPacket(
 std::string parseSocketIoEventName(const std::string& eventPayload);
 std::string parseSocketIoEventData(const std::string& eventPayload);
 std::string parseSocketIoStringField(const std::string& eventPayload, const std::string& fieldName);
+std::string mergeSocketIoBinaryEventData(
+    const std::string& eventDataJson, const std::vector<std::string>& binaryAttachments);
 
 }  // namespace socketIoServer::protocol

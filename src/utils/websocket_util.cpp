@@ -315,6 +315,11 @@ bool readWebSocketFrame(int fd, std::string& payloadOut, WebSocketOpcode& opcode
     payloadOut.assign(reinterpret_cast<const char*>(payload.data()), payload.size());
     return true;
   }
+  if (opcode == static_cast<std::uint8_t>(WebSocketOpcode::binary)) {
+    opcodeOut = WebSocketOpcode::binary;
+    payloadOut.assign(reinterpret_cast<const char*>(payload.data()), payload.size());
+    return true;
+  }
 
   opcodeOut = WebSocketOpcode::continuation;
   payloadOut.assign(reinterpret_cast<const char*>(payload.data()), payload.size());

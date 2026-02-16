@@ -216,4 +216,56 @@ std::string parseSocketIoStringField(const std::string& eventPayload, const std:
   return std::string(it->value().as_string().c_str());
 }
 
+namespace {
+
+void replaceBinaryPlaceholders(boost::json::value& node, const std::vector<std::string>& binaryAttachments)
+{
+  if (node.is_object()) {
+    boost::json::object& obj = node.as_object();
+    const auto placeholderIt = obj.find("_placeholder");
+    const auto numIt = obj.find("num");
+    if (placeholderIt != obj.end() && numIt != obj.end() && placeholderIt->value().is_bool() &&
+        placeholderIt->value().as_bool() && numIt->value().is_int64()) {
+      const std::int64_t index = numIt->value().as_int64();
+      if (index >= 0 && static_cast<std::size_t>(index) < binaryAttachments.size()) {
+        node = binaryAttachments[static_cast<std::size_t>(index)];
+      } else {
+        node = "";
+      }
+      return;
+    }
+
+    for (auto& it : obj) {
+      replaceBinaryPlaceholders(it.value(), binaryAttachments);
+    }
+    return;
+  }
+
+  if (node.is_array()) {
+    boost::json::array& arr = node.as_array();
+    for (auto& value : arr) {
+      replaceBinaryPlaceholders(value, binaryAttachments);
+    }
+  }
+}
+
+}  // namespace
+
+std::string mergeSocketIoBinaryEventData(
+    const std::string& eventDataJson, const std::vector<std::string>& binaryAttachments)
+{
+  if (eventDataJson.empty() || binaryAttachments.empty()) {
+    return eventDataJson;
+  }
+
+  boost::system::error_code ec;
+  boost::json::value data = boost::json::parse(eventDataJson, ec);
+  if (ec) {
+    return eventDataJson;
+  }
+
+  replaceBinaryPlaceholders(data, binaryAttachments);
+  return boost::json::serialize(data);
+}
+
 }  // namespace socketIoServer::protocol

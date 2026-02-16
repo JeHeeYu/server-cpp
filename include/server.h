@@ -81,6 +81,9 @@ class Server {
   std::chrono::milliseconds sessionTtl() const;
   void dispatchSocketIoEvent(
       const std::string& sid, const std::string& packet, const std::function<void(const std::string&)>& sendPacket);
+  void dispatchSocketIoEventData(
+      const std::string& sid, const std::string& nsp, const std::string& ackId, const std::string& eventName,
+      const std::string& eventData, const std::function<void(const std::string&)>& sendPacket);
   std::string makeRoomKey(const std::string& nsp, const std::string& room) const;
   void broadcastToRoom(
       const std::string& nsp, const std::string& room, const std::string& packet,

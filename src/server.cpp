@@ -399,15 +399,22 @@ void Server::dispatchSocketIoEvent(
 
   const std::string eventName = protocol::parseSocketIoEventName(eventPacket.eventPayload);
   const std::string eventData = protocol::parseSocketIoEventData(eventPacket.eventPayload);
+  dispatchSocketIoEventData(sid, eventPacket.nsp, eventPacket.ackId, eventName, eventData, sendPacket);
+}
+
+void Server::dispatchSocketIoEventData(
+    const std::string& sid, const std::string& nsp, const std::string& ackId, const std::string& eventName,
+    const std::string& eventData, const std::function<void(const std::string&)>& sendPacket)
+{
   if (eventName.empty()) {
-    sendPacket(protocol::makeSocketIoErrorEventPacket(
-        eventPacket.nsp, constants::kCodeEmptyEventName, constants::kMessageEmptyEventName));
+    sendPacket(
+        protocol::makeSocketIoErrorEventPacket(nsp, constants::kCodeEmptyEventName, constants::kMessageEmptyEventName));
     return;
   }
 
-  const ConnectDecision guardDecision = evaluateEventGuard(sid, eventPacket.nsp, eventName, eventData);
+  const ConnectDecision guardDecision = evaluateEventGuard(sid, nsp, eventName, eventData);
   if (!guardDecision.allowed) {
-    sendPacket(protocol::makeSocketIoErrorEventPacket(eventPacket.nsp, guardDecision.code, guardDecision.message));
+    sendPacket(protocol::makeSocketIoErrorEventPacket(nsp, guardDecision.code, guardDecision.message));
     return;
   }
 
@@ -420,14 +427,14 @@ void Server::dispatchSocketIoEvent(
     return;
   }
 
-  const AckCallback ack = [eventPacket, sendPacket](const std::string& ackJsonArrayPayload) {
-    if (eventPacket.ackId.empty()) {
+  const AckCallback ack = [ackId, nsp, sendPacket](const std::string& ackJsonArrayPayload) {
+    if (ackId.empty()) {
       return;
     }
-    sendPacket(protocol::makeSocketIoAckPacket(eventPacket.ackId, ackJsonArrayPayload, eventPacket.nsp));
+    sendPacket(protocol::makeSocketIoAckPacket(ackId, ackJsonArrayPayload, nsp));
   };
 
-  handlerCopy(*this, sid, eventPacket.nsp, eventName, eventData, ack);
+  handlerCopy(*this, sid, nsp, eventName, eventData, ack);
 }
 
 void Server::enqueuePacket(const std::string& sid, const std::string& packet)
