@@ -1,6 +1,7 @@
 #include "session.h"
 
 #include "protocol/types.h"
+#include "utils/websocket_util.h"
 
 #include <chrono>
 #include <vector>
@@ -158,6 +159,40 @@ bool Server::consumeInboundPacketBudget(const std::string& sid)
 
 void Server::enqueuePacket(const std::string& sid, const std::string& packet)
 {
+  int targetWebSocketFd = -1;
+  {
+    std::lock_guard<std::mutex> lock(sessionsMutex);
+    const auto it = sessions.find(sid);
+    if (it == sessions.end()) {
+      return;
+    }
+
+    if (!it->second.online) {
+      enqueuePacketUnlocked(it->second, packet);
+      return;
+    }
+
+    {
+      std::lock_guard<std::mutex> wsLock(webSocketClientsMutex);
+      for (const auto& entry : webSocketClients) {
+        if (entry.second == sid) {
+          targetWebSocketFd = entry.first;
+          break;
+        }
+      }
+    }
+
+    if (targetWebSocketFd < 0) {
+      enqueuePacketUnlocked(it->second, packet);
+      return;
+    }
+  }
+
+  if (utils::sendWebSocketTextFrame(targetWebSocketFd, packet)) {
+    return;
+  }
+
+  markSessionDisconnected(sid);
   std::lock_guard<std::mutex> lock(sessionsMutex);
   const auto it = sessions.find(sid);
   if (it == sessions.end()) {
