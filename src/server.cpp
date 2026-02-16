@@ -445,6 +445,10 @@ void Server::enqueuePacket(const std::string& sid, const std::string& packet)
     return;
   }
   it->second.lastSeenAt = std::chrono::steady_clock::now();
+  if (config.maxOutgoingPacketsPerSession > 0 &&
+      it->second.outgoingPackets.size() >= config.maxOutgoingPacketsPerSession) {
+    it->second.outgoingPackets.pop_front();
+  }
   it->second.outgoingPackets.push_back(packet);
 }
 

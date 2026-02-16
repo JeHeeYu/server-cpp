@@ -16,6 +16,7 @@ inline constexpr const char* kEngineIoPacketPing = "2";
 inline constexpr const char* kEngineIoPacketPong = "3";
 inline constexpr const char* kEngineIoPacketUpgrade = "5";
 inline constexpr const char* kEngineIoPacketNoop = "6";
+inline constexpr const char* kEngineIoPacketBinaryPrefix = "b";
 inline constexpr const char* kEngineIoPacketProbePing = "2probe";
 inline constexpr const char* kEngineIoPacketProbePong = "3probe";
 inline constexpr std::uint32_t kEngineIoDefaultPingIntervalMs = 25000;
@@ -72,7 +73,6 @@ std::string makeSocketIoEventPacket(
     const std::string& eventName, const std::string& jsonObjectPayload, const std::string& nsp = "/");
 std::string makeSocketIoErrorEventPacket(const std::string& nsp, int code, const std::string& message);
 
-bool hasPingEventName(const std::string& payload);
 bool isEngineIoProbePingPacket(const std::string& packet);
 bool isEngineIoUpgradePacket(const std::string& packet);
 std::size_t socketIoPayloadStartOffset(SocketIoPacketType packetType);

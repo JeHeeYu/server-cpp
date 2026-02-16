@@ -4,6 +4,7 @@
 #include <boost/json.hpp>
 #include <boost/system/error_code.hpp>
 
+#include <cstdint>
 #include <cstdlib>
 
 namespace socketIoServer::protocol {
@@ -93,11 +94,6 @@ std::string makeSocketIoEventPacket(
 std::string makeSocketIoErrorEventPacket(const std::string& nsp, int code, const std::string& message)
 {
   return makeSocketIoEventPacket(kSocketIoServerErrorEventName, utils::makeServerErrorPayload(code, message), nsp);
-}
-
-bool hasPingEventName(const std::string& payload)
-{
-  return payload.find("\"ping\"") != std::string::npos;
 }
 
 bool parseSocketIoConnectPacket(const std::string& packet, SocketIoConnectPacket& connectPacketOut)

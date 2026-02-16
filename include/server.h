@@ -10,6 +10,7 @@
 #include <thread>
 #include <unordered_map>
 #include <unordered_set>
+#include <vector>
 
 namespace socketIoServer {
 
@@ -19,6 +20,7 @@ struct ServerConfig {
   std::uint16_t maxConnections = 1024;
   std::uint32_t pingIntervalMs = 25000;
   std::uint32_t pingTimeoutMs = 20000;
+  std::size_t maxOutgoingPacketsPerSession = 1024;
 };
 
 class Server {
@@ -57,6 +59,11 @@ class Server {
     std::string sid;
     std::unordered_set<std::string> connectedNamespaces;
     std::deque<std::string> outgoingPackets;
+    std::string pendingBinaryNsp;
+    std::string pendingBinaryAckId;
+    std::string pendingBinaryEventPayload;
+    std::size_t pendingBinaryExpectedAttachmentCount = 0;
+    std::vector<std::string> pendingBinaryAttachments;
     std::chrono::steady_clock::time_point lastSeenAt = std::chrono::steady_clock::now();
   };
 

@@ -22,6 +22,7 @@ inline constexpr int kCodeNamespaceNotConnected = 4003;
 inline constexpr int kCodeEmptyEventName = 4004;
 inline constexpr int kCodeBinaryAttachmentOutOfOrder = 4006;
 inline constexpr int kCodeBinaryAttachmentCountMismatch = 4007;
+inline constexpr int kCodeOutgoingQueueOverflow = 4008;
 
 inline constexpr const char* kMessageMalformedConnectPacket = "malformed connect packet";
 inline constexpr const char* kMessageMalformedEventPacket = "malformed event packet";
@@ -29,5 +30,6 @@ inline constexpr const char* kMessageNamespaceNotConnected = "namespace not conn
 inline constexpr const char* kMessageEmptyEventName = "empty event name";
 inline constexpr const char* kMessageBinaryAttachmentOutOfOrder = "binary attachment out of order";
 inline constexpr const char* kMessageBinaryAttachmentCountMismatch = "binary attachment count mismatch";
+inline constexpr const char* kMessageOutgoingQueueOverflow = "outgoing queue overflow";
 
 }  // namespace socketIoServer::constants
