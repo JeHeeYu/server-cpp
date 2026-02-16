@@ -1,4 +1,5 @@
 #include "server.h"
+#include "protocol.h"
 #include "utils/engine_io_util.h"
 #include "utils/http_util.h"
 #include "utils/url_util.h"
@@ -17,7 +18,8 @@ void Server::processEngineIoPacket(const std::string& sid, const std::string& pa
     return;
   }
 
-  if (packet.rfind("40", 0) == 0) {
+  const protocol::SocketIoPacketType packetType = protocol::parseSocketIoPacketType(packet);
+  if (packetType == protocol::SocketIoPacketType::connect) {
     {
       std::lock_guard<std::mutex> lock(sessionsMutex);
       auto it = sessions.find(sid);
@@ -25,12 +27,12 @@ void Server::processEngineIoPacket(const std::string& sid, const std::string& pa
         it->second.namespaceConnected = true;
       }
     }
-    enqueuePacket(sid, "40{\"sid\":\"" + sid + "\"}");
+    enqueuePacket(sid, protocol::makeSocketIoConnectPacket(sid));
     return;
   }
 
-  if (packet.rfind("42", 0) == 0) {
-    std::size_t pos = 2;
+  if (packetType == protocol::SocketIoPacketType::event) {
+    std::size_t pos = protocol::socketIoPayloadStartOffset(packetType);
     std::string ackId;
     while (pos < packet.size() && packet[pos] >= '0' && packet[pos] <= '9') {
       ackId.push_back(packet[pos]);
@@ -38,8 +40,8 @@ void Server::processEngineIoPacket(const std::string& sid, const std::string& pa
     }
 
     const std::string payload = packet.substr(pos);
-    if (payload.find("\"ping\"") != std::string::npos && !ackId.empty()) {
-      enqueuePacket(sid, "43" + ackId + "[{\"ok\":true}]");
+    if (protocol::hasPingEventName(payload) && !ackId.empty()) {
+      enqueuePacket(sid, protocol::makeSocketIoAckPacket(ackId));
     }
     return;
   }
@@ -70,7 +72,7 @@ bool Server::handleHttpRequest(const std::string& request, std::string& response
     return true;
   }
 
-  if (eioIt->second != "4" || transportIt->second != "polling") {
+  if (!protocol::isEngineIoVersion4(eioIt->second) || !protocol::isPollingTransport(transportIt->second)) {
     response = utils::makeHttpResponse("400 Bad Request", "unsupported transport");
     return true;
   }
@@ -85,9 +87,7 @@ bool Server::handleHttpRequest(const std::string& request, std::string& response
         std::lock_guard<std::mutex> lock(sessionsMutex);
         sessions.emplace(sid, std::move(session));
       }
-      const std::string openPacket =
-          "0{\"sid\":\"" + sid +
-          "\",\"upgrades\":[],\"pingInterval\":25000,\"pingTimeout\":20000,\"maxPayload\":1000000}";
+      const std::string openPacket = protocol::makeEngineIoOpenPacket(sid);
       response = utils::makeHttpResponse("200 OK", openPacket);
       return true;
     }

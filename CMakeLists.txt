@@ -6,11 +6,14 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
 add_library(socketIoServerCore
+  src/protocol.cpp
   src/utils/http_util.cpp
   src/utils/url_util.cpp
   src/utils/engine_io_util.cpp
+  src/utils/websocket_util.cpp
   src/server.cpp
   src/server_http.cpp
+  src/server_ws.cpp
 )
 
 target_include_directories(socketIoServerCore

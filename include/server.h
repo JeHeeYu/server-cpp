@@ -34,6 +34,9 @@ class Server {
   void acceptLoop();
   void handleClient(int clientFd);
   void processEngineIoPacket(const std::string& sid, const std::string& packet);
+  bool handleWebSocketHandshake(
+      int clientFd, const std::string& request, const std::unordered_map<std::string, std::string>& query);
+  void serveWebSocket(int clientFd, const std::string& sid);
   std::string createSession();
   bool handleHttpRequest(const std::string& request, std::string& response);
   void enqueuePacket(const std::string& sid, const std::string& packet);

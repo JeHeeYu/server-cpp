@@ -1,5 +1,6 @@
 #include "server.h"
 #include "utils/http_util.h"
+#include "utils/url_util.h"
 
 #include <arpa/inet.h>
 #include <netinet/in.h>
@@ -120,6 +121,17 @@ void Server::handleClient(int clientFd)
 {
   std::string request;
   if (utils::readHttpRequestFromSocket(clientFd, request)) {
+    const std::string target = utils::parseRequestTarget(request);
+    std::string path;
+    std::string queryString;
+    utils::splitTarget(target, path, queryString);
+    const auto query = utils::parseQuery(queryString);
+    if (handleWebSocketHandshake(clientFd, request, query)) {
+      ::shutdown(clientFd, SHUT_RDWR);
+      ::close(clientFd);
+      return;
+    }
+
     std::string response;
     const bool handled = handleHttpRequest(request, response);
     if (!handled) {

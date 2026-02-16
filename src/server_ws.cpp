@@ -1,0 +1,115 @@
+#include "server.h"
+#include "protocol.h"
+#include "utils/websocket_util.h"
+
+#include <sys/socket.h>
+
+namespace socketIoServer {
+
+bool Server::handleWebSocketHandshake(
+    int clientFd, const std::string& request, const std::unordered_map<std::string, std::string>& query)
+{
+  const auto eioIt = query.find("EIO");
+  const auto transportIt = query.find("transport");
+  if (eioIt == query.end() || transportIt == query.end()) {
+    return false;
+  }
+  if (!protocol::isEngineIoVersion4(eioIt->second) ||
+      !protocol::isWebSocketTransport(transportIt->second)) {
+    return false;
+  }
+
+  const std::string wsKey = utils::getHttpHeader(request, "Sec-WebSocket-Key");
+  if (wsKey.empty()) {
+    return false;
+  }
+
+  const std::string acceptValue = utils::computeWebSocketAccept(wsKey);
+  const std::string response =
+      "HTTP/1.1 101 Switching Protocols\r\n"
+      "Upgrade: websocket\r\n"
+      "Connection: Upgrade\r\n"
+      "Sec-WebSocket-Accept: " +
+      acceptValue + "\r\n"
+                    "\r\n";
+  if (::send(clientFd, response.c_str(), response.size(), 0) <= 0) {
+    return false;
+  }
+
+  auto sidIt = query.find("sid");
+  std::string sid;
+  if (sidIt == query.end()) {
+    sid = createSession();
+    SessionState session;
+    session.sid = sid;
+    {
+      std::lock_guard<std::mutex> lock(sessionsMutex);
+      sessions.emplace(sid, std::move(session));
+    }
+  } else {
+    sid = sidIt->second;
+  }
+
+  const std::string openPacket = protocol::makeEngineIoOpenPacket(sid);
+  if (!utils::sendWebSocketTextFrame(clientFd, openPacket)) {
+    return false;
+  }
+
+  serveWebSocket(clientFd, sid);
+  return true;
+}
+
+void Server::serveWebSocket(int clientFd, const std::string& sid)
+{
+  while (running.load()) {
+    std::string packet;
+    if (!utils::readWebSocketTextFrame(clientFd, packet)) {
+      break;
+    }
+
+    if (packet.empty()) {
+      continue;
+    }
+
+    const protocol::EngineIoControlPacket controlType = protocol::parseEngineIoControlPacket(packet);
+    if (controlType == protocol::EngineIoControlPacket::ping) {
+      if (!utils::sendWebSocketTextFrame(clientFd, protocol::toWirePacket(protocol::EngineIoControlPacket::pong))) {
+        break;
+      }
+      continue;
+    }
+
+    const protocol::SocketIoPacketType packetType = protocol::parseSocketIoPacketType(packet);
+    if (packetType == protocol::SocketIoPacketType::connect) {
+      {
+        std::lock_guard<std::mutex> lock(sessionsMutex);
+        auto it = sessions.find(sid);
+        if (it != sessions.end()) {
+          it->second.namespaceConnected = true;
+        }
+      }
+      if (!utils::sendWebSocketTextFrame(clientFd, protocol::makeSocketIoConnectPacket(sid))) {
+        break;
+      }
+      continue;
+    }
+
+    if (packetType == protocol::SocketIoPacketType::event) {
+      std::size_t pos = protocol::socketIoPayloadStartOffset(packetType);
+      std::string ackId;
+      while (pos < packet.size() && packet[pos] >= '0' && packet[pos] <= '9') {
+        ackId.push_back(packet[pos]);
+        ++pos;
+      }
+      const std::string payload = packet.substr(pos);
+      if (protocol::hasPingEventName(payload) && !ackId.empty()) {
+        if (!utils::sendWebSocketTextFrame(clientFd, protocol::makeSocketIoAckPacket(ackId))) {
+          break;
+        }
+      }
+      continue;
+    }
+  }
+}
+
+}  // namespace socketIoServer
