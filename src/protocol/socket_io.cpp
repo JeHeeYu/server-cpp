@@ -96,6 +96,14 @@ std::string makeSocketIoEventPacket(
          utils::makeSocketIoEventArrayPayload(eventName, jsonObjectPayload);
 }
 
+std::string makeSocketIoEventPacket(
+    const std::string& eventName, const std::string& jsonObjectPayload, const std::string& nsp,
+    const std::string& ackId)
+{
+  return namespacePrefix(kSocketIoPacketEventPrefix, nsp) + ackId +
+         utils::makeSocketIoEventArrayPayload(eventName, jsonObjectPayload);
+}
+
 std::string makeSocketIoErrorEventPacket(const std::string& nsp, int code, const std::string& message)
 {
   return makeSocketIoEventPacket(kSocketIoServerErrorEventName, utils::makeServerErrorPayload(code, message), nsp);
@@ -216,6 +224,13 @@ bool parseSocketIoAckPacket(const std::string& packet, SocketIoAckPacket& ackPac
   }
 
   ackPacketOut.ackPayload = packet.substr(pos);
+  if (!ackPacketOut.ackPayload.empty()) {
+    boost::system::error_code ec;
+    const boost::json::value parsedAckPayload = boost::json::parse(ackPacketOut.ackPayload, ec);
+    if (ec || !parsedAckPayload.is_array()) {
+      return false;
+    }
+  }
   return true;
 }
 

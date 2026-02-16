@@ -60,6 +60,15 @@ void Server::removeSession(const std::string& sid)
     sessionRooms.erase(roomsIt);
   }
   sessions.erase(sid);
+
+  std::lock_guard<std::mutex> ackLock(pendingAcksMutex);
+  for (auto it = pendingAcks.begin(); it != pendingAcks.end();) {
+    if (it->second.sid == sid) {
+      it = pendingAcks.erase(it);
+      continue;
+    }
+    ++it;
+  }
 }
 
 void Server::connectNamespace(const std::string& sid, const std::string& nsp)

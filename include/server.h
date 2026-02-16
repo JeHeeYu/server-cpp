@@ -70,6 +70,7 @@ class Server {
   using ClientAckHandler = std::function<void(
       Server& server, const std::string& sid, const std::string& nsp, const std::string& ackId,
       const std::string& ackPayload)>;
+  using ClientEventAckCallback = std::function<void(bool success, const std::string& ackPayload)>;
 
   explicit Server(ServerConfig config);
 
@@ -84,6 +85,9 @@ class Server {
   void addEventMiddleware(EventMiddleware middleware);
   void clearEventMiddlewares();
   void setClientAckHandler(ClientAckHandler handler);
+  bool emitToSidEventWithAck(
+      const std::string& sid, const std::string& nsp, const std::string& eventName,
+      const std::string& jsonObjectPayload, std::uint32_t timeoutMs, ClientEventAckCallback callback);
   void joinRoom(const std::string& sid, const std::string& nsp, const std::string& room);
   void leaveRoom(const std::string& sid, const std::string& nsp, const std::string& room);
   void emitToRoomEvent(
@@ -116,6 +120,13 @@ class Server {
     std::size_t inboundPacketCountInWindow = 0;
     std::chrono::steady_clock::time_point lastSeenAt = std::chrono::steady_clock::now();
     std::chrono::steady_clock::time_point disconnectedAt = std::chrono::steady_clock::time_point::min();
+  };
+  struct PendingAckState {
+    std::string sid;
+    std::string nsp;
+    std::string ackId;
+    std::chrono::steady_clock::time_point expiresAt;
+    ClientEventAckCallback callback;
   };
 
   void acceptLoop();
@@ -167,6 +178,7 @@ class Server {
   void unregisterWebSocketClient(int clientFd);
   void resetPendingBinaryState(SessionState& session);
   bool consumeInboundPacketBudget(const std::string& sid);
+  std::string buildPendingAckKey(const std::string& sid, const std::string& nsp, const std::string& ackId) const;
 
   ServerConfig config;
   std::atomic<bool> running{false};
@@ -181,12 +193,15 @@ class Server {
   std::mutex connectHandlerMutex;
   std::mutex namespaceMiddlewareMutex;
   std::mutex ackHandlerMutex;
+  std::mutex pendingAcksMutex;
   EventHandler eventHandler;
   EventGuardHandler eventGuardHandler;
   std::vector<EventMiddleware> eventMiddlewares;
   NamespaceConnectHandler namespaceConnectHandler;
   std::vector<NamespaceMiddleware> namespaceMiddlewares;
   ClientAckHandler clientAckHandler;
+  std::unordered_map<std::string, PendingAckState> pendingAcks;
+  std::atomic<std::uint64_t> nextOutboundAckId{1};
   std::unordered_map<std::string, SessionState> sessions;
   std::unordered_map<std::string, std::unordered_set<std::string>> roomMembers;
   std::unordered_map<std::string, std::unordered_set<std::string>> sessionRooms;

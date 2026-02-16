@@ -157,6 +157,37 @@ void Server::setClientAckHandler(ClientAckHandler handler)
   clientAckHandler = std::move(handler);
 }
 
+bool Server::emitToSidEventWithAck(
+    const std::string& sid, const std::string& nsp, const std::string& eventName, const std::string& jsonObjectPayload,
+    std::uint32_t timeoutMs, ClientEventAckCallback callback)
+{
+  if (sid.empty() || eventName.empty() || !callback) {
+    return false;
+  }
+
+  const std::string normalizedNsp = protocol::normalizeNamespace(nsp);
+  if (!hasSession(sid) || !isNamespaceConnected(sid, normalizedNsp)) {
+    return false;
+  }
+
+  const std::string ackId = std::to_string(nextOutboundAckId.fetch_add(1));
+  PendingAckState state;
+  state.sid = sid;
+  state.nsp = normalizedNsp;
+  state.ackId = ackId;
+  state.expiresAt = std::chrono::steady_clock::now() + std::chrono::milliseconds(timeoutMs);
+  state.callback = std::move(callback);
+
+  {
+    std::lock_guard<std::mutex> lock(pendingAcksMutex);
+    pendingAcks.emplace(buildPendingAckKey(sid, normalizedNsp, ackId), std::move(state));
+  }
+
+  enqueuePacket(
+      sid, protocol::makeSocketIoEventPacket(eventName, jsonObjectPayload, normalizedNsp, ackId));
+  return true;
+}
+
 void Server::acceptLoop()
 {
   while (running.load()) {
@@ -183,6 +214,7 @@ void Server::sessionLoop()
     const auto onlineTtl = sessionTtl();
     const auto recoveryTtl = std::chrono::milliseconds(config.sessionRecoveryMs);
     std::vector<std::string> expiredSids;
+    std::vector<PendingAckState> expiredAcks;
 
     {
       std::lock_guard<std::mutex> lock(sessionsMutex);
@@ -205,8 +237,26 @@ void Server::sessionLoop()
       }
     }
 
+    {
+      std::lock_guard<std::mutex> lock(pendingAcksMutex);
+      for (auto it = pendingAcks.begin(); it != pendingAcks.end();) {
+        if (it->second.expiresAt <= now) {
+          expiredAcks.push_back(std::move(it->second));
+          it = pendingAcks.erase(it);
+          continue;
+        }
+        ++it;
+      }
+    }
+
     for (const std::string& sid : expiredSids) {
       removeSession(sid);
+    }
+
+    for (const PendingAckState& ackState : expiredAcks) {
+      if (ackState.callback) {
+        ackState.callback(false, "");
+      }
     }
   }
 }
@@ -360,6 +410,21 @@ void Server::dispatchSocketIoEventData(
 void Server::dispatchSocketIoAckData(
     const std::string& sid, const std::string& nsp, const std::string& ackId, const std::string& ackPayload)
 {
+  const std::string normalizedNsp = protocol::normalizeNamespace(nsp);
+  ClientEventAckCallback pendingAckCallback;
+  {
+    std::lock_guard<std::mutex> lock(pendingAcksMutex);
+    const std::string key = buildPendingAckKey(sid, normalizedNsp, ackId);
+    const auto it = pendingAcks.find(key);
+    if (it != pendingAcks.end()) {
+      pendingAckCallback = std::move(it->second.callback);
+      pendingAcks.erase(it);
+    }
+  }
+  if (pendingAckCallback) {
+    pendingAckCallback(true, ackPayload);
+  }
+
   ClientAckHandler handlerCopy;
   {
     std::lock_guard<std::mutex> lock(ackHandlerMutex);
@@ -368,7 +433,12 @@ void Server::dispatchSocketIoAckData(
   if (!handlerCopy) {
     return;
   }
-  handlerCopy(*this, sid, protocol::normalizeNamespace(nsp), ackId, ackPayload);
+  handlerCopy(*this, sid, normalizedNsp, ackId, ackPayload);
+}
+
+std::string Server::buildPendingAckKey(const std::string& sid, const std::string& nsp, const std::string& ackId) const
+{
+  return sid + "|" + nsp + "|" + ackId;
 }
 
 void Server::registerWebSocketClient(int clientFd, const std::string& sid)
