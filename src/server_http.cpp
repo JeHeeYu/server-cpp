@@ -3,6 +3,7 @@
 #include "protocol/types.h"
 #include "utils/engine_io_util.h"
 #include "utils/http_util.h"
+#include "utils/json_util.h"
 #include "utils/url_util.h"
 
 #include <chrono>
@@ -39,6 +40,14 @@ void Server::processEngineIoPacket(const std::string& sid, const std::string& pa
     protocol::SocketIoEventPacket pendingEvent;
     std::vector<std::string> attachments;
     bool readyToDispatch = false;
+    std::size_t decodedBinarySize = 0;
+    const std::string encodedBinary = packet.substr(1);
+    if (!utils::getDecodedBase64Size(encodedBinary, decodedBinarySize)) {
+      enqueuePacket(
+          sid, protocol::makeSocketIoErrorEventPacket(
+                   "/", constants::kCodeMalformedEventPacket, constants::kMessageMalformedEventPacket));
+      return;
+    }
 
     {
       std::lock_guard<std::mutex> lock(sessionsMutex);
@@ -56,8 +65,7 @@ void Server::processEngineIoPacket(const std::string& sid, const std::string& pa
         return;
       }
 
-      const std::string encodedBinary = packet.substr(1);
-      if (encodedBinary.size() > config.maxBinaryAttachmentBytes) {
+      if (decodedBinarySize > config.maxBinaryAttachmentBytes) {
         enqueuePacketUnlocked(
             session, protocol::makeSocketIoErrorEventPacket(
                          session.pendingBinaryNsp, constants::kCodePayloadTooLarge, constants::kMessagePayloadTooLarge));
@@ -65,7 +73,7 @@ void Server::processEngineIoPacket(const std::string& sid, const std::string& pa
         return;
       }
       session.pendingBinaryAttachments.push_back(encodedBinary);
-      session.pendingBinaryTotalBytes += encodedBinary.size();
+      session.pendingBinaryTotalBytes += decodedBinarySize;
       if (session.pendingBinaryTotalBytes > config.maxBinaryTotalBytesPerEvent) {
         enqueuePacketUnlocked(
             session, protocol::makeSocketIoErrorEventPacket(
@@ -170,6 +178,15 @@ void Server::processEngineIoPacket(const std::string& sid, const std::string& pa
     return;
   }
 
+  if (packetType == protocol::SocketIoPacketType::ack || packetType == protocol::SocketIoPacketType::binaryAck) {
+    protocol::SocketIoAckPacket ackPacket;
+    if (!protocol::parseSocketIoAckPacket(packet, ackPacket)) {
+      enqueuePacket(sid, protocol::makeSocketIoErrorEventPacket(
+                             "/", constants::kCodeMalformedEventPacket, constants::kMessageMalformedEventPacket));
+    }
+    return;
+  }
+
   if (packetType == protocol::SocketIoPacketType::event ||
       packetType == protocol::SocketIoPacketType::binaryEvent) {
     if (packetType == protocol::SocketIoPacketType::binaryEvent) {
@@ -205,6 +222,11 @@ void Server::processEngineIoPacket(const std::string& sid, const std::string& pa
       enqueuePacket(sid, packetToSend);
     });
     return;
+  }
+
+  if (packetType == protocol::SocketIoPacketType::unknown) {
+    enqueuePacket(sid, protocol::makeSocketIoErrorEventPacket(
+                           "/", constants::kCodeMalformedEventPacket, constants::kMessageMalformedEventPacket));
   }
 }
 

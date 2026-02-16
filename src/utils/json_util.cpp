@@ -10,6 +10,26 @@ namespace socketIoServer::utils {
 
 namespace {
 
+std::int8_t base64Value(unsigned char c)
+{
+  if (c >= 'A' && c <= 'Z') {
+    return static_cast<std::int8_t>(c - 'A');
+  }
+  if (c >= 'a' && c <= 'z') {
+    return static_cast<std::int8_t>(26 + (c - 'a'));
+  }
+  if (c >= '0' && c <= '9') {
+    return static_cast<std::int8_t>(52 + (c - '0'));
+  }
+  if (c == '+') {
+    return 62;
+  }
+  if (c == '/') {
+    return 63;
+  }
+  return -1;
+}
+
 std::string base64Encode(const std::uint8_t* data, std::size_t size)
 {
   static constexpr char kTable[] =
@@ -113,6 +133,38 @@ std::string encodeBase64(const std::string& binaryData)
 {
   return base64Encode(
       reinterpret_cast<const std::uint8_t*>(binaryData.data()), static_cast<std::size_t>(binaryData.size()));
+}
+
+bool getDecodedBase64Size(const std::string& encoded, std::size_t& decodedSizeOut)
+{
+  decodedSizeOut = 0;
+  if (encoded.empty() || (encoded.size() % 4) != 0) {
+    return false;
+  }
+
+  std::size_t paddingCount = 0;
+  if (!encoded.empty() && encoded[encoded.size() - 1] == '=') {
+    paddingCount = 1;
+    if (encoded.size() > 1 && encoded[encoded.size() - 2] == '=') {
+      paddingCount = 2;
+    }
+  }
+
+  for (std::size_t i = 0; i < encoded.size(); ++i) {
+    const unsigned char c = static_cast<unsigned char>(encoded[i]);
+    if (c == '=') {
+      if (i < encoded.size() - paddingCount) {
+        return false;
+      }
+      continue;
+    }
+    if (base64Value(c) < 0) {
+      return false;
+    }
+  }
+
+  decodedSizeOut = (encoded.size() / 4) * 3 - paddingCount;
+  return true;
 }
 
 }  // namespace socketIoServer::utils

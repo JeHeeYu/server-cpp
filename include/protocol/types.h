@@ -93,10 +93,20 @@ struct SocketIoConnectPacket {
   std::string authJson;
 };
 
+struct SocketIoAckPacket {
+  std::string nsp = "/";
+  std::string ackId;
+  std::string ackPayload;
+  int attachmentCount = 0;
+  bool isBinary = false;
+};
+
 bool parseSocketIoConnectPacket(
     const std::string& packet, SocketIoConnectPacket& connectPacketOut);
 bool parseSocketIoEventPacket(
     const std::string& packet, SocketIoEventPacket& eventPacketOut);
+bool parseSocketIoAckPacket(
+    const std::string& packet, SocketIoAckPacket& ackPacketOut);
 std::string parseSocketIoEventName(const std::string& eventPayload);
 std::string parseSocketIoEventData(const std::string& eventPayload);
 std::string parseSocketIoStringField(const std::string& eventPayload, const std::string& fieldName);

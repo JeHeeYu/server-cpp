@@ -20,6 +20,11 @@ std::string namespacePrefix(const std::string& packetTypeCode, const std::string
   return packetTypeCode + normalized + ",";
 }
 
+bool isDigit(char c)
+{
+  return c >= '0' && c <= '9';
+}
+
 }  // namespace
 
 SocketIoPacketType parseSocketIoPacketType(const std::string& packet)
@@ -115,6 +120,11 @@ bool parseSocketIoConnectPacket(const std::string& packet, SocketIoConnectPacket
   }
 
   if (pos < packet.size()) {
+    boost::system::error_code ec;
+    const boost::json::value auth = boost::json::parse(packet.substr(pos), ec);
+    if (ec || !auth.is_object()) {
+      return false;
+    }
     connectPacketOut.authJson = packet.substr(pos);
   }
   return true;
@@ -158,6 +168,54 @@ bool parseSocketIoEventPacket(const std::string& packet, SocketIoEventPacket& ev
     ++pos;
   }
   eventPacketOut.eventPayload = packet.substr(pos);
+  return true;
+}
+
+bool parseSocketIoAckPacket(const std::string& packet, SocketIoAckPacket& ackPacketOut)
+{
+  ackPacketOut = SocketIoAckPacket{};
+
+  const SocketIoPacketType packetType = parseSocketIoPacketType(packet);
+  if (packetType != SocketIoPacketType::ack && packetType != SocketIoPacketType::binaryAck) {
+    return false;
+  }
+
+  std::size_t pos = socketIoPayloadStartOffset(packetType);
+  if (packetType == SocketIoPacketType::binaryAck) {
+    ackPacketOut.isBinary = true;
+    std::string count;
+    while (pos < packet.size() && isDigit(packet[pos])) {
+      count.push_back(packet[pos]);
+      ++pos;
+    }
+    if (count.empty() || pos >= packet.size() || packet[pos] != '-') {
+      return false;
+    }
+    ackPacketOut.attachmentCount = std::atoi(count.c_str());
+    if (ackPacketOut.attachmentCount <= 0) {
+      return false;
+    }
+    ++pos;
+  }
+
+  if (pos < packet.size() && packet[pos] == '/') {
+    const std::size_t endPos = packet.find(',', pos);
+    if (endPos == std::string::npos) {
+      return false;
+    }
+    ackPacketOut.nsp = normalizeNamespace(packet.substr(pos, endPos - pos));
+    pos = endPos + 1;
+  }
+
+  while (pos < packet.size() && isDigit(packet[pos])) {
+    ackPacketOut.ackId.push_back(packet[pos]);
+    ++pos;
+  }
+  if (ackPacketOut.ackId.empty()) {
+    return false;
+  }
+
+  ackPacketOut.ackPayload = packet.substr(pos);
   return true;
 }
 

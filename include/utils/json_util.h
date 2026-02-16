@@ -16,5 +16,6 @@ std::string makeRoomMessagePayload(
     const std::string& roomField, const std::string& room, const std::string& fromSid,
     const std::string& messageField, const std::string& message);
 std::string encodeBase64(const std::string& binaryData);
+bool getDecodedBase64Size(const std::string& encoded, std::size_t& decodedSizeOut);
 
 }  // namespace socketIoServer::utils

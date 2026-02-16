@@ -388,6 +388,30 @@ void Server::serveWebSocket(int clientFd, const std::string& sid)
       disconnectNamespace(sid, protocol::parseSocketIoNamespace(packet));
       continue;
     }
+
+    if (packetType == protocol::SocketIoPacketType::ack ||
+        packetType == protocol::SocketIoPacketType::binaryAck) {
+      protocol::SocketIoAckPacket ackPacket;
+      if (!protocol::parseSocketIoAckPacket(packet, ackPacket)) {
+        if (!utils::sendWebSocketTextFrame(
+                clientFd,
+                protocol::makeSocketIoErrorEventPacket(
+                    "/", constants::kCodeMalformedEventPacket, constants::kMessageMalformedEventPacket))) {
+          break;
+        }
+      }
+      continue;
+    }
+
+    if (packetType == protocol::SocketIoPacketType::unknown) {
+      if (!utils::sendWebSocketTextFrame(
+              clientFd,
+              protocol::makeSocketIoErrorEventPacket(
+                  "/", constants::kCodeMalformedEventPacket, constants::kMessageMalformedEventPacket))) {
+        break;
+      }
+      continue;
+    }
   }
 
   markSessionDisconnected(sid);
