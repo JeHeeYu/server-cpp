@@ -46,12 +46,15 @@ bool Server::handleWebSocketHandshake(
 
   auto sidIt = query.find("sid");
   std::string sid;
+  std::string privateId;
   std::deque<std::string> pendingPackets;
   bool directWebSocketConnection = false;
   if (sidIt == query.end()) {
     sid = createSession();
+    privateId = createPrivateId();
     SessionState session;
     session.sid = sid;
+    session.privateId = privateId;
     session.lastSeenAt = std::chrono::steady_clock::now();
     session.connectedNamespaces.insert("/");
     {
@@ -79,10 +82,18 @@ bool Server::handleWebSocketHandshake(
       if (sessionIt == sessions.end()) {
         return false;
       }
+      privateId = sessionIt->second.privateId;
       sessionIt->second.online = true;
       sessionIt->second.lastSeenAt = std::chrono::steady_clock::now();
       sessionIt->second.disconnectedAt = std::chrono::steady_clock::time_point::min();
-      if (config.enableSessionRecovery && hasRecoveryOffset) {
+      bool recoveryAllowed = config.enableSessionRecovery && hasRecoveryOffset;
+      const auto privateIdIt = query.find("pid");
+      if (recoveryAllowed) {
+        if (privateIdIt == query.end() || privateIdIt->second != sessionIt->second.privateId) {
+          recoveryAllowed = false;
+        }
+      }
+      if (recoveryAllowed) {
         collectPacketsSinceOffsetUnlocked(sessionIt->second, recoveryOffset, pendingPackets);
       } else {
         pendingPackets.swap(sessionIt->second.outgoingPackets);
@@ -92,7 +103,8 @@ bool Server::handleWebSocketHandshake(
 
   if (directWebSocketConnection) {
     const std::string openPacket = protocol::makeEngineIoOpenPacket(
-        sid, config.pingIntervalMs, config.pingTimeoutMs, static_cast<std::uint32_t>(config.maxIncomingPacketBytes));
+        sid, privateId, config.pingIntervalMs, config.pingTimeoutMs,
+        static_cast<std::uint32_t>(config.maxIncomingPacketBytes));
     if (!utils::sendWebSocketTextFrame(clientFd, openPacket)) {
       return false;
     }

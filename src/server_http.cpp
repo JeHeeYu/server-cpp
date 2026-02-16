@@ -329,8 +329,10 @@ bool Server::handleHttpRequest(const std::string& request, std::string& response
     const auto sidIt = query.find("sid");
     if (sidIt == query.end()) {
       const std::string sid = createSession();
+      const std::string privateId = createPrivateId();
       SessionState session;
       session.sid = sid;
+      session.privateId = privateId;
       session.lastSeenAt = std::chrono::steady_clock::now();
       session.connectedNamespaces.insert("/");
       {
@@ -338,7 +340,8 @@ bool Server::handleHttpRequest(const std::string& request, std::string& response
         sessions.emplace(sid, std::move(session));
       }
       const std::string openPacket = protocol::makeEngineIoOpenPacket(
-          sid, config.pingIntervalMs, config.pingTimeoutMs, static_cast<std::uint32_t>(config.maxIncomingPacketBytes));
+          sid, privateId, config.pingIntervalMs, config.pingTimeoutMs,
+          static_cast<std::uint32_t>(config.maxIncomingPacketBytes));
       response = utils::makeHttpResponse(constants::kHttpStatusOk, openPacket);
       return true;
     }
@@ -360,7 +363,14 @@ bool Server::handleHttpRequest(const std::string& request, std::string& response
       it->second.online = true;
       it->second.disconnectedAt = std::chrono::steady_clock::time_point::min();
       it->second.lastSeenAt = std::chrono::steady_clock::now();
-      if (config.enableSessionRecovery && hasRecoveryOffset) {
+      bool recoveryAllowed = config.enableSessionRecovery && hasRecoveryOffset;
+      const auto privateIdIt = query.find("pid");
+      if (recoveryAllowed) {
+        if (privateIdIt == query.end() || privateIdIt->second != it->second.privateId) {
+          recoveryAllowed = false;
+        }
+      }
+      if (recoveryAllowed) {
         collectPacketsSinceOffsetUnlocked(it->second, recoveryOffset, pendingPackets);
       } else {
         pendingPackets.swap(it->second.outgoingPackets);

@@ -55,10 +55,14 @@ std::string base64Encode(const std::uint8_t* data, std::size_t size)
 }  // namespace
 
 std::string makeEngineIoOpenPayload(
-    const std::string& sid, std::uint32_t pingIntervalMs, std::uint32_t pingTimeoutMs, std::uint32_t maxPayload)
+    const std::string& sid, const std::string& privateId, std::uint32_t pingIntervalMs, std::uint32_t pingTimeoutMs,
+    std::uint32_t maxPayload)
 {
   boost::json::object payload;
   payload["sid"] = sid;
+  if (!privateId.empty()) {
+    payload["pid"] = privateId;
+  }
 
   boost::json::array upgrades;
   upgrades.emplace_back("websocket");

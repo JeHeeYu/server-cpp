@@ -2,6 +2,7 @@
 
   struct SessionState {
     std::string sid;
+    std::string privateId;
     std::unordered_set<std::string> connectedNamespaces;
     std::deque<std::string> outgoingPackets;
     bool online = true;
@@ -35,6 +36,7 @@
       int clientFd, const std::string& request, const std::unordered_map<std::string, std::string>& query);
   void serveWebSocket(int clientFd, const std::string& sid);
   std::string createSession();
+  std::string createPrivateId();
   bool hasSession(const std::string& sid);
   void touchSession(const std::string& sid);
   void markSessionDisconnected(const std::string& sid);
@@ -87,6 +89,7 @@
   std::thread acceptThread;
   std::thread sessionThread;
   std::atomic<std::uint64_t> nextSid{1};
+  std::atomic<std::uint64_t> nextPrivateId{1};
   std::mutex sessionsMutex;
   std::mutex eventHandlerMutex;
   std::mutex eventGuardMutex;

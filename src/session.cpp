@@ -14,6 +14,12 @@ std::string Server::createSession()
   return "sid" + std::to_string(id);
 }
 
+std::string Server::createPrivateId()
+{
+  const std::uint64_t id = nextPrivateId.fetch_add(1);
+  return "pid" + std::to_string(id);
+}
+
 bool Server::hasSession(const std::string& sid)
 {
   std::lock_guard<std::mutex> lock(sessionsMutex);
