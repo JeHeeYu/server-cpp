@@ -38,6 +38,7 @@ bool Server::handleWebSocketHandshake(
 
   auto sidIt = query.find("sid");
   std::string sid;
+  bool directWebSocketConnection = false;
   if (sidIt == query.end()) {
     sid = createSession();
     SessionState session;
@@ -46,13 +47,20 @@ bool Server::handleWebSocketHandshake(
       std::lock_guard<std::mutex> lock(sessionsMutex);
       sessions.emplace(sid, std::move(session));
     }
+    directWebSocketConnection = true;
   } else {
     sid = sidIt->second;
+    std::lock_guard<std::mutex> lock(sessionsMutex);
+    if (sessions.find(sid) == sessions.end()) {
+      return false;
+    }
   }
 
-  const std::string openPacket = protocol::makeEngineIoOpenPacket(sid);
-  if (!utils::sendWebSocketTextFrame(clientFd, openPacket)) {
-    return false;
+  if (directWebSocketConnection) {
+    const std::string openPacket = protocol::makeEngineIoOpenPacket(sid);
+    if (!utils::sendWebSocketTextFrame(clientFd, openPacket)) {
+      return false;
+    }
   }
 
   serveWebSocket(clientFd, sid);
@@ -68,6 +76,17 @@ void Server::serveWebSocket(int clientFd, const std::string& sid)
     }
 
     if (packet.empty()) {
+      continue;
+    }
+
+    if (protocol::isEngineIoProbePingPacket(packet)) {
+      if (!utils::sendWebSocketTextFrame(clientFd, protocol::makeEngineIoProbePongPacket())) {
+        break;
+      }
+      continue;
+    }
+
+    if (protocol::isEngineIoUpgradePacket(packet)) {
       continue;
     }
 

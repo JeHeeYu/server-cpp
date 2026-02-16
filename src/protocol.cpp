@@ -62,7 +62,17 @@ std::string toWirePacket(EngineIoControlPacket packetType)
 std::string makeEngineIoOpenPacket(const std::string& sid)
 {
   return "0{\"sid\":\"" + sid +
-         "\",\"upgrades\":[],\"pingInterval\":25000,\"pingTimeout\":20000,\"maxPayload\":1000000}";
+         "\",\"upgrades\":[\"websocket\"],\"pingInterval\":25000,\"pingTimeout\":20000,\"maxPayload\":1000000}";
+}
+
+std::string makeEngineIoProbePongPacket()
+{
+  return "3probe";
+}
+
+std::string makeEngineIoUpgradePacket()
+{
+  return "5";
 }
 
 std::string makeSocketIoConnectPacket(const std::string& sid)
@@ -78,6 +88,16 @@ std::string makeSocketIoAckPacket(const std::string& ackId)
 bool hasPingEventName(const std::string& payload)
 {
   return payload.find("\"ping\"") != std::string::npos;
+}
+
+bool isEngineIoProbePingPacket(const std::string& packet)
+{
+  return packet == "2probe";
+}
+
+bool isEngineIoUpgradePacket(const std::string& packet)
+{
+  return packet == "5";
 }
 
 std::size_t socketIoPayloadStartOffset(SocketIoPacketType packetType)

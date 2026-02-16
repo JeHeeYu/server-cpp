@@ -19,6 +19,12 @@ void Server::processEngineIoPacket(const std::string& sid, const std::string& pa
   }
 
   const protocol::SocketIoPacketType packetType = protocol::parseSocketIoPacketType(packet);
+  const protocol::EngineIoControlPacket controlType = protocol::parseEngineIoControlPacket(packet);
+  if (controlType == protocol::EngineIoControlPacket::ping) {
+    enqueuePacket(sid, protocol::toWirePacket(protocol::EngineIoControlPacket::pong));
+    return;
+  }
+
   if (packetType == protocol::SocketIoPacketType::connect) {
     {
       std::lock_guard<std::mutex> lock(sessionsMutex);

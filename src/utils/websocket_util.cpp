@@ -2,6 +2,7 @@
 
 #include <sys/socket.h>
 
+#include <algorithm>
 #include <array>
 #include <cctype>
 #include <cstddef>
@@ -29,6 +30,14 @@ std::string trim(const std::string& value)
   }
 
   return value.substr(begin, end - begin);
+}
+
+std::string toLowerAscii(std::string value)
+{
+  std::transform(value.begin(), value.end(), value.begin(), [](unsigned char c) {
+    return static_cast<char>(std::tolower(c));
+  });
+  return value;
 }
 
 bool recvExact(int fd, void* data, std::size_t size)
@@ -174,7 +183,7 @@ std::string base64Encode(const std::uint8_t* data, std::size_t size)
 
 std::string getHttpHeader(const std::string& request, const std::string& headerName)
 {
-  const std::string needle = headerName + ":";
+  const std::string needle = toLowerAscii(headerName) + ":";
   std::size_t start = 0;
   while (start < request.size()) {
     const std::size_t lineEnd = request.find("\r\n", start);
@@ -185,7 +194,8 @@ std::string getHttpHeader(const std::string& request, const std::string& headerN
     if (line.empty()) {
       break;
     }
-    if (line.size() >= needle.size() && line.compare(0, needle.size(), needle) == 0) {
+    const std::string lowerLine = toLowerAscii(line);
+    if (lowerLine.size() >= needle.size() && lowerLine.compare(0, needle.size(), needle) == 0) {
       return trim(line.substr(needle.size()));
     }
     start = lineEnd + 2;
