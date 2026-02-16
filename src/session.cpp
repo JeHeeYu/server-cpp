@@ -124,6 +124,7 @@ void Server::resetPendingBinaryState(SessionState& session)
   session.pendingBinaryNsp.clear();
   session.pendingBinaryAckId.clear();
   session.pendingBinaryEventPayload.clear();
+  session.pendingBinaryIsAck = false;
   session.pendingBinaryExpectedAttachmentCount = 0;
   session.pendingBinaryTotalBytes = 0;
   session.pendingBinaryAttachments.clear();

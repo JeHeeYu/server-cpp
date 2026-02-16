@@ -98,6 +98,7 @@ void Server::serveWebSocket(int clientFd, const std::string& sid)
   std::vector<std::string> pendingBinaryAttachments;
   std::size_t pendingBinaryTotalBytes = 0;
   bool hasPendingBinaryEvent = false;
+  bool pendingBinaryIsAck = false;
 
   while (running.load()) {
     std::string packet;
@@ -190,20 +191,23 @@ void Server::serveWebSocket(int clientFd, const std::string& sid)
       }
 
       if (pendingBinaryAttachments.size() == static_cast<std::size_t>(pendingBinaryEvent.attachmentCount)) {
-        const std::string eventName = protocol::parseSocketIoEventName(pendingBinaryEvent.eventPayload);
-        const std::string eventData = protocol::parseSocketIoEventData(pendingBinaryEvent.eventPayload);
-        const std::string mergedEventData =
-            protocol::mergeSocketIoBinaryEventData(eventData, pendingBinaryAttachments);
-
         bool sendFailed = false;
-        dispatchSocketIoEventData(
-            sid, pendingBinaryEvent.nsp, pendingBinaryEvent.ackId, eventName, mergedEventData,
-            [clientFd, &sendFailed](const std::string& packetToSend) {
-              if (!utils::sendWebSocketTextFrame(clientFd, packetToSend)) {
-                sendFailed = true;
-              }
-            });
+        if (!pendingBinaryIsAck) {
+          const std::string eventName = protocol::parseSocketIoEventName(pendingBinaryEvent.eventPayload);
+          const std::string eventData = protocol::parseSocketIoEventData(pendingBinaryEvent.eventPayload);
+          const std::string mergedEventData =
+              protocol::mergeSocketIoBinaryEventData(eventData, pendingBinaryAttachments);
+
+          dispatchSocketIoEventData(
+              sid, pendingBinaryEvent.nsp, pendingBinaryEvent.ackId, eventName, mergedEventData,
+              [clientFd, &sendFailed](const std::string& packetToSend) {
+                if (!utils::sendWebSocketTextFrame(clientFd, packetToSend)) {
+                  sendFailed = true;
+                }
+              });
+        }
         hasPendingBinaryEvent = false;
+        pendingBinaryIsAck = false;
         pendingBinaryAttachments.clear();
         pendingBinaryTotalBytes = 0;
         if (sendFailed) {
@@ -265,18 +269,24 @@ void Server::serveWebSocket(int clientFd, const std::string& sid)
     }
 
     const protocol::SocketIoPacketType packetType = protocol::parseSocketIoPacketType(packet);
-    if (hasPendingBinaryEvent && packetType != protocol::SocketIoPacketType::binaryEvent) {
-      if (!utils::sendWebSocketTextFrame(
-              clientFd,
-              protocol::makeSocketIoErrorEventPacket(
-                  pendingBinaryEvent.nsp, constants::kCodeBinaryAttachmentCountMismatch,
-                  constants::kMessageBinaryAttachmentCountMismatch))) {
-        break;
+    if (hasPendingBinaryEvent) {
+      const bool expectedBinaryPacketArrived =
+          pendingBinaryIsAck ? (packetType == protocol::SocketIoPacketType::binaryAck)
+                             : (packetType == protocol::SocketIoPacketType::binaryEvent);
+      if (!expectedBinaryPacketArrived) {
+        if (!utils::sendWebSocketTextFrame(
+                clientFd,
+                protocol::makeSocketIoErrorEventPacket(
+                    pendingBinaryEvent.nsp, constants::kCodeBinaryAttachmentCountMismatch,
+                    constants::kMessageBinaryAttachmentCountMismatch))) {
+          break;
+        }
+        hasPendingBinaryEvent = false;
+        pendingBinaryIsAck = false;
+        pendingBinaryAttachments.clear();
+        pendingBinaryTotalBytes = 0;
+        continue;
       }
-      hasPendingBinaryEvent = false;
-      pendingBinaryAttachments.clear();
-      pendingBinaryTotalBytes = 0;
-      continue;
     }
 
     if (packetType == protocol::SocketIoPacketType::connect) {
@@ -366,6 +376,7 @@ void Server::serveWebSocket(int clientFd, const std::string& sid)
         }
 
         hasPendingBinaryEvent = true;
+        pendingBinaryIsAck = false;
         pendingBinaryEvent = std::move(parsedBinaryEvent);
         pendingBinaryAttachments.clear();
         pendingBinaryTotalBytes = 0;
@@ -399,6 +410,26 @@ void Server::serveWebSocket(int clientFd, const std::string& sid)
                     "/", constants::kCodeMalformedEventPacket, constants::kMessageMalformedEventPacket))) {
           break;
         }
+      }
+      if (ackPacket.isBinary) {
+        if (static_cast<std::size_t>(ackPacket.attachmentCount) > config.maxBinaryAttachmentsPerEvent) {
+          if (!utils::sendWebSocketTextFrame(
+                  clientFd,
+                  protocol::makeSocketIoErrorEventPacket(
+                      ackPacket.nsp, constants::kCodeTooManyBinaryAttachments,
+                      constants::kMessageTooManyBinaryAttachments))) {
+            break;
+          }
+          continue;
+        }
+        hasPendingBinaryEvent = true;
+        pendingBinaryIsAck = true;
+        pendingBinaryEvent.nsp = ackPacket.nsp;
+        pendingBinaryEvent.ackId = ackPacket.ackId;
+        pendingBinaryEvent.eventPayload = ackPacket.ackPayload;
+        pendingBinaryEvent.attachmentCount = ackPacket.attachmentCount;
+        pendingBinaryAttachments.clear();
+        pendingBinaryTotalBytes = 0;
       }
       continue;
     }

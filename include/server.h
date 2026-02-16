@@ -80,6 +80,7 @@ class Server {
     std::string pendingBinaryNsp;
     std::string pendingBinaryAckId;
     std::string pendingBinaryEventPayload;
+    bool pendingBinaryIsAck = false;
     std::size_t pendingBinaryExpectedAttachmentCount = 0;
     std::size_t pendingBinaryTotalBytes = 0;
     std::vector<std::string> pendingBinaryAttachments;
