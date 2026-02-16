@@ -60,7 +60,9 @@ EngineIoControlPacket parseEngineIoControlPacket(const std::string& packet);
 SocketIoPacketType parseSocketIoPacketType(const std::string& packet);
 std::string toWirePacket(EngineIoControlPacket packetType);
 
-std::string makeEngineIoOpenPacket(const std::string& sid);
+std::string makeEngineIoOpenPacket(
+    const std::string& sid, std::uint32_t pingIntervalMs, std::uint32_t pingTimeoutMs,
+    std::uint32_t maxPayload = kEngineIoDefaultMaxPayload);
 std::string makeEngineIoProbePongPacket();
 std::string makeEngineIoUpgradePacket();
 std::string makeSocketIoConnectPacket(const std::string& sid, const std::string& nsp = "/");

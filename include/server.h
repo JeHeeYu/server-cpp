@@ -26,6 +26,8 @@ struct ServerConfig {
   std::uint32_t pingIntervalMs = 25000;
   std::uint32_t pingTimeoutMs = 20000;
   std::uint32_t sessionRecoveryMs = 30000;
+  std::size_t maxInboundPacketsPerSecond = 512;
+  std::size_t maxPacketsPerPollingPost = 256;
   std::size_t maxOutgoingPacketsPerSession = 1024;
   OutgoingOverflowPolicy outgoingOverflowPolicy = OutgoingOverflowPolicy::dropOldest;
   std::size_t maxIncomingPacketBytes = 1024 * 1024;
@@ -77,6 +79,8 @@ class Server {
     std::size_t pendingBinaryExpectedAttachmentCount = 0;
     std::size_t pendingBinaryTotalBytes = 0;
     std::vector<std::string> pendingBinaryAttachments;
+    std::chrono::steady_clock::time_point inboundWindowStart = std::chrono::steady_clock::time_point::min();
+    std::size_t inboundPacketCountInWindow = 0;
     std::chrono::steady_clock::time_point lastSeenAt = std::chrono::steady_clock::now();
     std::chrono::steady_clock::time_point disconnectedAt = std::chrono::steady_clock::time_point::min();
   };
@@ -116,6 +120,7 @@ class Server {
   void registerWebSocketClient(int clientFd, const std::string& sid);
   void unregisterWebSocketClient(int clientFd);
   void resetPendingBinaryState(SessionState& session);
+  bool consumeInboundPacketBudget(const std::string& sid);
 
   ServerConfig config;
   std::atomic<bool> running{false};

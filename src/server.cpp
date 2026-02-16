@@ -244,6 +244,34 @@ void Server::resetPendingBinaryState(SessionState& session)
   session.pendingBinaryAttachments.clear();
 }
 
+bool Server::consumeInboundPacketBudget(const std::string& sid)
+{
+  std::lock_guard<std::mutex> lock(sessionsMutex);
+  const auto it = sessions.find(sid);
+  if (it == sessions.end()) {
+    return false;
+  }
+
+  SessionState& session = it->second;
+  const auto now = std::chrono::steady_clock::now();
+  if (session.inboundWindowStart == std::chrono::steady_clock::time_point::min() ||
+      now - session.inboundWindowStart >= std::chrono::seconds(1)) {
+    session.inboundWindowStart = now;
+    session.inboundPacketCountInWindow = 0;
+  }
+
+  if (config.maxInboundPacketsPerSecond > 0 &&
+      session.inboundPacketCountInWindow >= config.maxInboundPacketsPerSecond) {
+    return false;
+  }
+
+  ++session.inboundPacketCountInWindow;
+  session.lastSeenAt = now;
+  session.online = true;
+  session.disconnectedAt = std::chrono::steady_clock::time_point::min();
+  return true;
+}
+
 void Server::connectNamespace(const std::string& sid, const std::string& nsp)
 {
   std::lock_guard<std::mutex> lock(sessionsMutex);

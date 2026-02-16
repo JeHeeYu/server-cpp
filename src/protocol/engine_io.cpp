@@ -49,11 +49,11 @@ std::string toWirePacket(EngineIoControlPacket packetType)
   return "";
 }
 
-std::string makeEngineIoOpenPacket(const std::string& sid)
+std::string makeEngineIoOpenPacket(
+    const std::string& sid, std::uint32_t pingIntervalMs, std::uint32_t pingTimeoutMs, std::uint32_t maxPayload)
 {
   return std::string(kEngineIoPacketOpenPrefix) +
-         utils::makeEngineIoOpenPayload(
-             sid, kEngineIoDefaultPingIntervalMs, kEngineIoDefaultPingTimeoutMs, kEngineIoDefaultMaxPayload);
+         utils::makeEngineIoOpenPayload(sid, pingIntervalMs, pingTimeoutMs, maxPayload);
 }
 
 std::string makeEngineIoProbePongPacket()

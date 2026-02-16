@@ -74,7 +74,8 @@ bool Server::handleWebSocketHandshake(
   }
 
   if (directWebSocketConnection) {
-    const std::string openPacket = protocol::makeEngineIoOpenPacket(sid);
+    const std::string openPacket = protocol::makeEngineIoOpenPacket(
+        sid, config.pingIntervalMs, config.pingTimeoutMs, static_cast<std::uint32_t>(config.maxIncomingPacketBytes));
     if (!utils::sendWebSocketTextFrame(clientFd, openPacket)) {
       return false;
     }
@@ -116,6 +117,15 @@ void Server::serveWebSocket(int clientFd, const std::string& sid)
       continue;
     }
     if (opcode == utils::WebSocketOpcode::binary) {
+      if (!consumeInboundPacketBudget(sid)) {
+        if (!utils::sendWebSocketTextFrame(
+                clientFd,
+                protocol::makeSocketIoErrorEventPacket(
+                    "/", constants::kCodeRateLimitExceeded, constants::kMessageRateLimitExceeded))) {
+          break;
+        }
+        continue;
+      }
       if (!hasPendingBinaryEvent) {
         if (!utils::sendWebSocketTextFrame(
                 clientFd,
@@ -204,6 +214,15 @@ void Server::serveWebSocket(int clientFd, const std::string& sid)
     }
 
     if (opcode == utils::WebSocketOpcode::pong || opcode != utils::WebSocketOpcode::text) {
+      continue;
+    }
+    if (!consumeInboundPacketBudget(sid)) {
+      if (!utils::sendWebSocketTextFrame(
+              clientFd,
+              protocol::makeSocketIoErrorEventPacket(
+                  "/", constants::kCodeRateLimitExceeded, constants::kMessageRateLimitExceeded))) {
+        break;
+      }
       continue;
     }
 

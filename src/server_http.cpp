@@ -21,6 +21,12 @@ void Server::processEngineIoPacket(const std::string& sid, const std::string& pa
   if (packet.empty()) {
     return;
   }
+  if (!consumeInboundPacketBudget(sid)) {
+    enqueuePacket(
+        sid, protocol::makeSocketIoErrorEventPacket(
+                 "/", constants::kCodeRateLimitExceeded, constants::kMessageRateLimitExceeded));
+    return;
+  }
   if (packet.size() > config.maxIncomingPacketBytes) {
     enqueuePacket(sid, protocol::makeSocketIoErrorEventPacket(
                            "/", constants::kCodePayloadTooLarge, constants::kMessagePayloadTooLarge));
@@ -238,7 +244,8 @@ bool Server::handleHttpRequest(const std::string& request, std::string& response
         std::lock_guard<std::mutex> lock(sessionsMutex);
         sessions.emplace(sid, std::move(session));
       }
-      const std::string openPacket = protocol::makeEngineIoOpenPacket(sid);
+      const std::string openPacket = protocol::makeEngineIoOpenPacket(
+          sid, config.pingIntervalMs, config.pingTimeoutMs, static_cast<std::uint32_t>(config.maxIncomingPacketBytes));
       response = utils::makeHttpResponse(constants::kHttpStatusOk, openPacket);
       return true;
     }
@@ -282,6 +289,10 @@ bool Server::handleHttpRequest(const std::string& request, std::string& response
 
     const std::string body = utils::parseRequestBody(request);
     const auto packets = utils::splitEngineIoPayload(body);
+    if (config.maxPacketsPerPollingPost > 0 && packets.size() > config.maxPacketsPerPollingPost) {
+      response = utils::makeHttpResponse(constants::kHttpStatusPayloadTooLarge, constants::kBodyTooManyPackets);
+      return true;
+    }
     for (const std::string& packet : packets) {
       processEngineIoPacket(sid, packet);
     }
