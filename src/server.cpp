@@ -2,6 +2,7 @@
 #include "protocol/types.h"
 #include "utils/http_util.h"
 #include "utils/url_util.h"
+#include "utils/websocket_util.h"
 
 #include <arpa/inet.h>
 #include <netinet/in.h>
@@ -70,6 +71,21 @@ void Server::stop()
 {
   if (!running.exchange(false)) {
     return;
+  }
+
+  std::vector<int> webSocketFds;
+  {
+    std::lock_guard<std::mutex> lock(webSocketClientsMutex);
+    webSocketFds.reserve(webSocketClients.size());
+    for (const auto& entry : webSocketClients) {
+      webSocketFds.push_back(entry.first);
+    }
+  }
+
+  for (const int clientFd : webSocketFds) {
+    (void)utils::sendWebSocketControlFrame(clientFd, utils::WebSocketOpcode::close);
+    ::shutdown(clientFd, SHUT_RDWR);
+    ::close(clientFd);
   }
 
   if (listenFd >= 0) {
@@ -419,6 +435,18 @@ void Server::enqueuePacket(const std::string& sid, const std::string& packet)
   }
   it->second.lastSeenAt = std::chrono::steady_clock::now();
   it->second.outgoingPackets.push_back(packet);
+}
+
+void Server::registerWebSocketClient(int clientFd, const std::string& sid)
+{
+  std::lock_guard<std::mutex> lock(webSocketClientsMutex);
+  webSocketClients[clientFd] = sid;
+}
+
+void Server::unregisterWebSocketClient(int clientFd)
+{
+  std::lock_guard<std::mutex> lock(webSocketClientsMutex);
+  webSocketClients.erase(clientFd);
 }
 
 void Server::handleClient(int clientFd)

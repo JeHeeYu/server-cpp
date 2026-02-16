@@ -87,6 +87,8 @@ class Server {
       const std::string& excludeSid = "");
   bool handleHttpRequest(const std::string& request, std::string& response);
   void enqueuePacket(const std::string& sid, const std::string& packet);
+  void registerWebSocketClient(int clientFd, const std::string& sid);
+  void unregisterWebSocketClient(int clientFd);
 
   ServerConfig config;
   std::atomic<bool> running{false};
@@ -104,6 +106,8 @@ class Server {
   std::unordered_map<std::string, SessionState> sessions;
   std::unordered_map<std::string, std::unordered_set<std::string>> roomMembers;
   std::unordered_map<std::string, std::unordered_set<std::string>> sessionRooms;
+  std::mutex webSocketClientsMutex;
+  std::unordered_map<int, std::string> webSocketClients;
 };
 
 }  // namespace socketIoServer

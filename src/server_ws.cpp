@@ -67,7 +67,9 @@ bool Server::handleWebSocketHandshake(
     }
   }
 
+  registerWebSocketClient(clientFd, sid);
   serveWebSocket(clientFd, sid);
+  unregisterWebSocketClient(clientFd);
   return true;
 }
 
@@ -75,8 +77,23 @@ void Server::serveWebSocket(int clientFd, const std::string& sid)
 {
   while (running.load()) {
     std::string packet;
-    if (!utils::readWebSocketTextFrame(clientFd, packet)) {
+    utils::WebSocketOpcode opcode = utils::WebSocketOpcode::invalid;
+    if (!utils::readWebSocketFrame(clientFd, packet, opcode)) {
       break;
+    }
+
+    if (opcode == utils::WebSocketOpcode::close) {
+      (void)utils::sendWebSocketControlFrame(clientFd, utils::WebSocketOpcode::close, packet);
+      break;
+    }
+    if (opcode == utils::WebSocketOpcode::ping) {
+      if (!utils::sendWebSocketControlFrame(clientFd, utils::WebSocketOpcode::pong, packet)) {
+        break;
+      }
+      continue;
+    }
+    if (opcode == utils::WebSocketOpcode::pong || opcode != utils::WebSocketOpcode::text) {
+      continue;
     }
 
     if (packet.empty()) {

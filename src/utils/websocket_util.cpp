@@ -68,6 +68,27 @@ bool sendAll(int fd, const void* data, std::size_t size)
   return true;
 }
 
+bool sendWebSocketFrame(int fd, std::uint8_t opcode, const std::string& payload)
+{
+  std::vector<std::uint8_t> frame;
+  frame.push_back(static_cast<std::uint8_t>(0x80 | (opcode & 0x0F)));
+  const std::size_t n = payload.size();
+  if (n <= 125) {
+    frame.push_back(static_cast<std::uint8_t>(n));
+  } else if (n <= 65535) {
+    frame.push_back(126);
+    frame.push_back(static_cast<std::uint8_t>((n >> 8) & 0xFF));
+    frame.push_back(static_cast<std::uint8_t>(n & 0xFF));
+  } else {
+    frame.push_back(127);
+    for (int i = 7; i >= 0; --i) {
+      frame.push_back(static_cast<std::uint8_t>((n >> (i * 8)) & 0xFF));
+    }
+  }
+  frame.insert(frame.end(), payload.begin(), payload.end());
+  return sendAll(fd, frame.data(), frame.size());
+}
+
 std::array<std::uint32_t, 80> buildSha1Schedule(const std::uint8_t* block)
 {
   std::array<std::uint32_t, 80> w{};
@@ -212,27 +233,23 @@ std::string computeWebSocketAccept(const std::string& secWebSocketKey)
 
 bool sendWebSocketTextFrame(int fd, const std::string& payload)
 {
-  std::vector<std::uint8_t> frame;
-  frame.push_back(0x81);
-  const std::size_t n = payload.size();
-  if (n <= 125) {
-    frame.push_back(static_cast<std::uint8_t>(n));
-  } else if (n <= 65535) {
-    frame.push_back(126);
-    frame.push_back(static_cast<std::uint8_t>((n >> 8) & 0xFF));
-    frame.push_back(static_cast<std::uint8_t>(n & 0xFF));
-  } else {
-    frame.push_back(127);
-    for (int i = 7; i >= 0; --i) {
-      frame.push_back(static_cast<std::uint8_t>((n >> (i * 8)) & 0xFF));
-    }
-  }
-  frame.insert(frame.end(), payload.begin(), payload.end());
-  return sendAll(fd, frame.data(), frame.size());
+  return sendWebSocketFrame(fd, static_cast<std::uint8_t>(WebSocketOpcode::text), payload);
 }
 
-bool readWebSocketTextFrame(int fd, std::string& payloadOut)
+bool sendWebSocketControlFrame(int fd, WebSocketOpcode opcode, const std::string& payload)
 {
+  if (opcode != WebSocketOpcode::close && opcode != WebSocketOpcode::ping && opcode != WebSocketOpcode::pong) {
+    return false;
+  }
+  if (payload.size() > 125) {
+    return false;
+  }
+  return sendWebSocketFrame(fd, static_cast<std::uint8_t>(opcode), payload);
+}
+
+bool readWebSocketFrame(int fd, std::string& payloadOut, WebSocketOpcode& opcodeOut)
+{
+  opcodeOut = WebSocketOpcode::invalid;
   payloadOut.clear();
   std::array<std::uint8_t, 2> header{};
   if (!recvExact(fd, header.data(), header.size())) {
@@ -278,15 +295,39 @@ bool readWebSocketTextFrame(int fd, std::string& payloadOut)
     }
   }
 
-  if (opcode == 0x8) {
-    return false;
+  if (opcode == static_cast<std::uint8_t>(WebSocketOpcode::close)) {
+    opcodeOut = WebSocketOpcode::close;
+    payloadOut.assign(reinterpret_cast<const char*>(payload.data()), payload.size());
+    return true;
   }
-  if (opcode != 0x1) {
+  if (opcode == static_cast<std::uint8_t>(WebSocketOpcode::ping)) {
+    opcodeOut = WebSocketOpcode::ping;
+    payloadOut.assign(reinterpret_cast<const char*>(payload.data()), payload.size());
+    return true;
+  }
+  if (opcode == static_cast<std::uint8_t>(WebSocketOpcode::pong)) {
+    opcodeOut = WebSocketOpcode::pong;
+    payloadOut.assign(reinterpret_cast<const char*>(payload.data()), payload.size());
+    return true;
+  }
+  if (opcode == static_cast<std::uint8_t>(WebSocketOpcode::text)) {
+    opcodeOut = WebSocketOpcode::text;
+    payloadOut.assign(reinterpret_cast<const char*>(payload.data()), payload.size());
     return true;
   }
 
+  opcodeOut = WebSocketOpcode::continuation;
   payloadOut.assign(reinterpret_cast<const char*>(payload.data()), payload.size());
   return true;
+}
+
+bool readWebSocketTextFrame(int fd, std::string& payloadOut)
+{
+  WebSocketOpcode opcode = WebSocketOpcode::invalid;
+  if (!readWebSocketFrame(fd, payloadOut, opcode)) {
+    return false;
+  }
+  return opcode == WebSocketOpcode::text;
 }
 
 }  // namespace socketIoServer::utils
