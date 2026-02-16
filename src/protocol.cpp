@@ -91,6 +91,19 @@ std::string makeSocketIoAckPacket(const std::string& ackId)
   return "43" + ackId + "[{\"ok\":true}]";
 }
 
+std::string makeSocketIoAckPacket(const std::string& ackId, const std::string& ackJsonArrayPayload)
+{
+  if (ackJsonArrayPayload.empty()) {
+    return "43" + ackId + "[]";
+  }
+  return "43" + ackId + ackJsonArrayPayload;
+}
+
+std::string makeSocketIoEventPacket(const std::string& eventName, const std::string& jsonObjectPayload)
+{
+  return "42[\"" + eventName + "\"," + jsonObjectPayload + "]";
+}
+
 bool hasPingEventName(const std::string& payload)
 {
   return payload.find("\"ping\"") != std::string::npos;
@@ -113,6 +126,68 @@ std::size_t socketIoPayloadStartOffset(SocketIoPacketType packetType)
     return 2;
   }
   return 0;
+}
+
+bool parseSocketIoEventPacket(
+    const std::string& packet, std::string& ackIdOut, std::string& eventPayloadOut)
+{
+  ackIdOut.clear();
+  eventPayloadOut.clear();
+
+  if (parseSocketIoPacketType(packet) != SocketIoPacketType::event) {
+    return false;
+  }
+
+  std::size_t pos = socketIoPayloadStartOffset(SocketIoPacketType::event);
+  while (pos < packet.size() && packet[pos] >= '0' && packet[pos] <= '9') {
+    ackIdOut.push_back(packet[pos]);
+    ++pos;
+  }
+  eventPayloadOut = packet.substr(pos);
+  return true;
+}
+
+std::string parseSocketIoEventName(const std::string& eventPayload)
+{
+  const std::string prefix = "[\"";
+  const std::size_t start = eventPayload.find(prefix);
+  if (start == std::string::npos) {
+    return "";
+  }
+  const std::size_t nameStart = start + prefix.size();
+  const std::size_t nameEnd = eventPayload.find('"', nameStart);
+  if (nameEnd == std::string::npos || nameEnd <= nameStart) {
+    return "";
+  }
+  return eventPayload.substr(nameStart, nameEnd - nameStart);
+}
+
+std::string parseSocketIoEventData(const std::string& eventPayload)
+{
+  const std::size_t commaPos = eventPayload.find(',');
+  if (commaPos == std::string::npos) {
+    return "";
+  }
+  const std::size_t endPos = eventPayload.rfind(']');
+  if (endPos == std::string::npos || endPos <= commaPos + 1) {
+    return "";
+  }
+  return eventPayload.substr(commaPos + 1, endPos - commaPos - 1);
+}
+
+std::string parseSocketIoStringField(const std::string& eventPayload, const std::string& fieldName)
+{
+  const std::string needle = "\"" + fieldName + "\":\"";
+  const std::size_t start = eventPayload.find(needle);
+  if (start == std::string::npos) {
+    return "";
+  }
+  const std::size_t valueStart = start + needle.size();
+  const std::size_t valueEnd = eventPayload.find('"', valueStart);
+  if (valueEnd == std::string::npos || valueEnd <= valueStart) {
+    return "";
+  }
+  return eventPayload.substr(valueStart, valueEnd - valueStart);
 }
 
 }  // namespace socketIoServer::protocol

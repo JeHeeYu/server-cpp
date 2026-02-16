@@ -4,10 +4,12 @@
 #include <chrono>
 #include <cstdint>
 #include <deque>
+#include <functional>
 #include <mutex>
 #include <string>
 #include <thread>
 #include <unordered_map>
+#include <unordered_set>
 
 namespace socketIoServer {
 
@@ -21,11 +23,19 @@ struct ServerConfig {
 
 class Server {
  public:
+  using AckCallback = std::function<void(const std::string& ackJsonArrayPayload)>;
+  using EventHandler = std::function<void(
+      Server& server, const std::string& sid, const std::string& eventName, const std::string& eventData,
+      const AckCallback& ack)>;
+
   explicit Server(ServerConfig config);
 
   bool start();
   void stop();
   bool isRunning() const;
+  void setEventHandler(EventHandler handler);
+  void joinRoom(const std::string& sid, const std::string& room);
+  void emitToRoomEvent(const std::string& room, const std::string& eventName, const std::string& jsonObjectPayload);
 
  private:
   struct SessionState {
@@ -47,6 +57,9 @@ class Server {
   void touchSession(const std::string& sid);
   void removeSession(const std::string& sid);
   std::chrono::milliseconds sessionTtl() const;
+  void dispatchSocketIoEvent(
+      const std::string& sid, const std::string& packet, const std::function<void(const std::string&)>& sendPacket);
+  void broadcastToRoom(const std::string& room, const std::string& packet);
   bool handleHttpRequest(const std::string& request, std::string& response);
   void enqueuePacket(const std::string& sid, const std::string& packet);
 
@@ -57,7 +70,11 @@ class Server {
   std::thread sessionThread;
   std::atomic<std::uint64_t> nextSid{1};
   std::mutex sessionsMutex;
+  std::mutex eventHandlerMutex;
+  EventHandler eventHandler;
   std::unordered_map<std::string, SessionState> sessions;
+  std::unordered_map<std::string, std::unordered_set<std::string>> roomMembers;
+  std::unordered_map<std::string, std::unordered_set<std::string>> sessionRooms;
 };
 
 }  // namespace socketIoServer

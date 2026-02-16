@@ -34,10 +34,17 @@ std::string makeEngineIoProbePongPacket();
 std::string makeEngineIoUpgradePacket();
 std::string makeSocketIoConnectPacket(const std::string& sid);
 std::string makeSocketIoAckPacket(const std::string& ackId);
+std::string makeSocketIoAckPacket(const std::string& ackId, const std::string& ackJsonArrayPayload);
+std::string makeSocketIoEventPacket(const std::string& eventName, const std::string& jsonObjectPayload);
 
 bool hasPingEventName(const std::string& payload);
 bool isEngineIoProbePingPacket(const std::string& packet);
 bool isEngineIoUpgradePacket(const std::string& packet);
 std::size_t socketIoPayloadStartOffset(SocketIoPacketType packetType);
+bool parseSocketIoEventPacket(
+    const std::string& packet, std::string& ackIdOut, std::string& eventPayloadOut);
+std::string parseSocketIoEventName(const std::string& eventPayload);
+std::string parseSocketIoEventData(const std::string& eventPayload);
+std::string parseSocketIoStringField(const std::string& eventPayload, const std::string& fieldName);
 
 }  // namespace socketIoServer::protocol

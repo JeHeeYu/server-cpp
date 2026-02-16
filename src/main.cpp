@@ -2,6 +2,7 @@
 #include <cstdlib>
 #include <string>
 
+#include "protocol.h"
 #include "server.h"
 
 int main()
@@ -17,6 +18,35 @@ int main()
   }
 
   socketIoServer::Server server(config);
+  server.setEventHandler(
+      [](socketIoServer::Server& serverRef, const std::string& sid, const std::string& eventName,
+          const std::string& eventData, const socketIoServer::Server::AckCallback& ack) {
+        if (eventName == "ping") {
+          ack("[{\"ok\":true}]");
+          return;
+        }
+
+        if (eventName == "join_room") {
+          const std::string room = socketIoServer::protocol::parseSocketIoStringField(eventData, "room");
+          if (!room.empty()) {
+            serverRef.joinRoom(sid, room);
+          }
+          ack("[{\"ok\":true}]");
+          return;
+        }
+
+        if (eventName == "room_ping") {
+          const std::string room = socketIoServer::protocol::parseSocketIoStringField(eventData, "room");
+          const std::string message = socketIoServer::protocol::parseSocketIoStringField(eventData, "message");
+          if (!room.empty()) {
+            const std::string body =
+                "{\"room\":\"" + room + "\",\"from\":\"" + sid + "\",\"message\":\"" + message + "\"}";
+            serverRef.emitToRoomEvent(room, "room_message", body);
+          }
+          ack("[{\"ok\":true}]");
+        }
+      });
+
   if (!server.start()) {
     std::cerr << "Failed to start socketIoServerCpp" << std::endl;
     return 1;

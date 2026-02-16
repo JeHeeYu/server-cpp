@@ -51,17 +51,9 @@ void Server::processEngineIoPacket(const std::string& sid, const std::string& pa
   }
 
   if (packetType == protocol::SocketIoPacketType::event) {
-    std::size_t pos = protocol::socketIoPayloadStartOffset(packetType);
-    std::string ackId;
-    while (pos < packet.size() && packet[pos] >= '0' && packet[pos] <= '9') {
-      ackId.push_back(packet[pos]);
-      ++pos;
-    }
-
-    const std::string payload = packet.substr(pos);
-    if (protocol::hasPingEventName(payload) && !ackId.empty()) {
-      enqueuePacket(sid, protocol::makeSocketIoAckPacket(ackId));
-    }
+    dispatchSocketIoEvent(sid, packet, [this, sid](const std::string& packetToSend) {
+      enqueuePacket(sid, packetToSend);
+    });
     return;
   }
 }

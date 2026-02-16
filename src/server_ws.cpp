@@ -123,17 +123,14 @@ void Server::serveWebSocket(int clientFd, const std::string& sid)
     }
 
     if (packetType == protocol::SocketIoPacketType::event) {
-      std::size_t pos = protocol::socketIoPayloadStartOffset(packetType);
-      std::string ackId;
-      while (pos < packet.size() && packet[pos] >= '0' && packet[pos] <= '9') {
-        ackId.push_back(packet[pos]);
-        ++pos;
-      }
-      const std::string payload = packet.substr(pos);
-      if (protocol::hasPingEventName(payload) && !ackId.empty()) {
-        if (!utils::sendWebSocketTextFrame(clientFd, protocol::makeSocketIoAckPacket(ackId))) {
-          break;
+      bool sendFailed = false;
+      dispatchSocketIoEvent(sid, packet, [clientFd, &sendFailed](const std::string& packetToSend) {
+        if (!utils::sendWebSocketTextFrame(clientFd, packetToSend)) {
+          sendFailed = true;
         }
+      });
+      if (sendFailed) {
+        break;
       }
       continue;
     }

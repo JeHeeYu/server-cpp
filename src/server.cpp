@@ -1,4 +1,5 @@
 #include "server.h"
+#include "protocol.h"
 #include "utils/http_util.h"
 #include "utils/url_util.h"
 
@@ -13,6 +14,7 @@
 #include <string>
 #include <thread>
 #include <utility>
+#include <vector>
 
 namespace socketIoServer {
 
@@ -90,6 +92,12 @@ bool Server::isRunning() const
   return running.load();
 }
 
+void Server::setEventHandler(EventHandler handler)
+{
+  std::lock_guard<std::mutex> lock(eventHandlerMutex);
+  eventHandler = std::move(handler);
+}
+
 void Server::acceptLoop()
 {
   while (running.load()) {
@@ -114,19 +122,23 @@ void Server::sessionLoop()
     std::this_thread::sleep_for(std::chrono::seconds(1));
     const auto now = std::chrono::steady_clock::now();
     const auto ttl = sessionTtl();
+    std::vector<std::string> expiredSids;
 
-    std::lock_guard<std::mutex> lock(sessionsMutex);
-    for (auto it = sessions.begin(); it != sessions.end();) {
-      const auto idle = std::chrono::duration_cast<std::chrono::milliseconds>(now - it->second.lastSeenAt);
-      if (idle > ttl) {
-        it = sessions.erase(it);
-      } else {
-        ++it;
+    {
+      std::lock_guard<std::mutex> lock(sessionsMutex);
+      for (const auto& entry : sessions) {
+        const auto idle = std::chrono::duration_cast<std::chrono::milliseconds>(now - entry.second.lastSeenAt);
+        if (idle > ttl) {
+          expiredSids.push_back(entry.first);
+        }
       }
+    }
+
+    for (const std::string& sid : expiredSids) {
+      removeSession(sid);
     }
   }
 }
-
 std::string Server::createSession()
 {
   const std::uint64_t id = nextSid.fetch_add(1);
@@ -151,6 +163,19 @@ void Server::touchSession(const std::string& sid)
 void Server::removeSession(const std::string& sid)
 {
   std::lock_guard<std::mutex> lock(sessionsMutex);
+  const auto roomsIt = sessionRooms.find(sid);
+  if (roomsIt != sessionRooms.end()) {
+    for (const std::string& room : roomsIt->second) {
+      const auto membersIt = roomMembers.find(room);
+      if (membersIt != roomMembers.end()) {
+        membersIt->second.erase(sid);
+        if (membersIt->second.empty()) {
+          roomMembers.erase(membersIt);
+        }
+      }
+    }
+    sessionRooms.erase(roomsIt);
+  }
   sessions.erase(sid);
 }
 
@@ -158,6 +183,81 @@ std::chrono::milliseconds Server::sessionTtl() const
 {
   return std::chrono::milliseconds(
       static_cast<std::uint64_t>(config.pingIntervalMs) + static_cast<std::uint64_t>(config.pingTimeoutMs));
+}
+
+void Server::joinRoom(const std::string& sid, const std::string& room)
+{
+  if (room.empty()) {
+    return;
+  }
+
+  std::lock_guard<std::mutex> lock(sessionsMutex);
+  if (sessions.find(sid) == sessions.end()) {
+    return;
+  }
+  roomMembers[room].insert(sid);
+  sessionRooms[sid].insert(room);
+}
+
+void Server::broadcastToRoom(const std::string& room, const std::string& packet)
+{
+  if (room.empty() || packet.empty()) {
+    return;
+  }
+
+  std::vector<std::string> targets;
+  {
+    std::lock_guard<std::mutex> lock(sessionsMutex);
+    const auto membersIt = roomMembers.find(room);
+    if (membersIt == roomMembers.end()) {
+      return;
+    }
+    targets.assign(membersIt->second.begin(), membersIt->second.end());
+  }
+
+  for (const std::string& sid : targets) {
+    enqueuePacket(sid, packet);
+  }
+}
+
+void Server::emitToRoomEvent(
+    const std::string& room, const std::string& eventName, const std::string& jsonObjectPayload)
+{
+  broadcastToRoom(room, protocol::makeSocketIoEventPacket(eventName, jsonObjectPayload));
+}
+
+void Server::dispatchSocketIoEvent(
+    const std::string& sid, const std::string& packet, const std::function<void(const std::string&)>& sendPacket)
+{
+  std::string ackId;
+  std::string eventPayload;
+  if (!protocol::parseSocketIoEventPacket(packet, ackId, eventPayload)) {
+    return;
+  }
+
+  const std::string eventName = protocol::parseSocketIoEventName(eventPayload);
+  const std::string eventData = protocol::parseSocketIoEventData(eventPayload);
+  if (eventName.empty()) {
+    return;
+  }
+
+  EventHandler handlerCopy;
+  {
+    std::lock_guard<std::mutex> lock(eventHandlerMutex);
+    handlerCopy = eventHandler;
+  }
+  if (!handlerCopy) {
+    return;
+  }
+
+  const AckCallback ack = [ackId, sendPacket](const std::string& ackJsonArrayPayload) {
+    if (ackId.empty()) {
+      return;
+    }
+    sendPacket(protocol::makeSocketIoAckPacket(ackId, ackJsonArrayPayload));
+  };
+
+  handlerCopy(*this, sid, eventName, eventData, ack);
 }
 
 void Server::enqueuePacket(const std::string& sid, const std::string& packet)
