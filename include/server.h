@@ -25,8 +25,8 @@ class Server {
  public:
   using AckCallback = std::function<void(const std::string& ackJsonArrayPayload)>;
   using EventHandler = std::function<void(
-      Server& server, const std::string& sid, const std::string& eventName, const std::string& eventData,
-      const AckCallback& ack)>;
+      Server& server, const std::string& sid, const std::string& nsp, const std::string& eventName,
+      const std::string& eventData, const AckCallback& ack)>;
 
   explicit Server(ServerConfig config);
 
@@ -34,13 +34,16 @@ class Server {
   void stop();
   bool isRunning() const;
   void setEventHandler(EventHandler handler);
-  void joinRoom(const std::string& sid, const std::string& room);
-  void emitToRoomEvent(const std::string& room, const std::string& eventName, const std::string& jsonObjectPayload);
+  void joinRoom(const std::string& sid, const std::string& nsp, const std::string& room);
+  void leaveRoom(const std::string& sid, const std::string& nsp, const std::string& room);
+  void emitToRoomEvent(
+      const std::string& nsp, const std::string& room, const std::string& eventName,
+      const std::string& jsonObjectPayload, const std::string& excludeSid = "");
 
  private:
   struct SessionState {
     std::string sid;
-    bool namespaceConnected = false;
+    std::unordered_set<std::string> connectedNamespaces;
     std::deque<std::string> outgoingPackets;
     std::chrono::steady_clock::time_point lastSeenAt = std::chrono::steady_clock::now();
   };
@@ -56,10 +59,15 @@ class Server {
   bool hasSession(const std::string& sid);
   void touchSession(const std::string& sid);
   void removeSession(const std::string& sid);
+  void connectNamespace(const std::string& sid, const std::string& nsp);
+  void disconnectNamespace(const std::string& sid, const std::string& nsp);
   std::chrono::milliseconds sessionTtl() const;
   void dispatchSocketIoEvent(
       const std::string& sid, const std::string& packet, const std::function<void(const std::string&)>& sendPacket);
-  void broadcastToRoom(const std::string& room, const std::string& packet);
+  std::string makeRoomKey(const std::string& nsp, const std::string& room) const;
+  void broadcastToRoom(
+      const std::string& nsp, const std::string& room, const std::string& packet,
+      const std::string& excludeSid = "");
   bool handleHttpRequest(const std::string& request, std::string& response);
   void enqueuePacket(const std::string& sid, const std::string& packet);
 

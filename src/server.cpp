@@ -179,36 +179,119 @@ void Server::removeSession(const std::string& sid)
   sessions.erase(sid);
 }
 
+void Server::connectNamespace(const std::string& sid, const std::string& nsp)
+{
+  std::lock_guard<std::mutex> lock(sessionsMutex);
+  const auto it = sessions.find(sid);
+  if (it == sessions.end()) {
+    return;
+  }
+  it->second.connectedNamespaces.insert(protocol::normalizeNamespace(nsp));
+  it->second.lastSeenAt = std::chrono::steady_clock::now();
+}
+
+void Server::disconnectNamespace(const std::string& sid, const std::string& nsp)
+{
+  const std::string normalizedNsp = protocol::normalizeNamespace(nsp);
+  std::lock_guard<std::mutex> lock(sessionsMutex);
+
+  const auto sessionIt = sessions.find(sid);
+  if (sessionIt == sessions.end()) {
+    return;
+  }
+  sessionIt->second.connectedNamespaces.erase(normalizedNsp);
+
+  const auto roomsIt = sessionRooms.find(sid);
+  if (roomsIt != sessionRooms.end()) {
+    std::vector<std::string> toErase;
+    for (const std::string& roomKey : roomsIt->second) {
+      if (roomKey.rfind(normalizedNsp + "|", 0) == 0) {
+        toErase.push_back(roomKey);
+      }
+    }
+    for (const std::string& roomKey : toErase) {
+      const auto membersIt = roomMembers.find(roomKey);
+      if (membersIt != roomMembers.end()) {
+        membersIt->second.erase(sid);
+        if (membersIt->second.empty()) {
+          roomMembers.erase(membersIt);
+        }
+      }
+      roomsIt->second.erase(roomKey);
+    }
+    if (roomsIt->second.empty()) {
+      sessionRooms.erase(roomsIt);
+    }
+  }
+}
+
 std::chrono::milliseconds Server::sessionTtl() const
 {
   return std::chrono::milliseconds(
       static_cast<std::uint64_t>(config.pingIntervalMs) + static_cast<std::uint64_t>(config.pingTimeoutMs));
 }
 
-void Server::joinRoom(const std::string& sid, const std::string& room)
+std::string Server::makeRoomKey(const std::string& nsp, const std::string& room) const
+{
+  return protocol::normalizeNamespace(nsp) + "|" + room;
+}
+
+void Server::joinRoom(const std::string& sid, const std::string& nsp, const std::string& room)
 {
   if (room.empty()) {
     return;
   }
 
+  const std::string roomKey = makeRoomKey(nsp, room);
+  const std::string normalizedNsp = protocol::normalizeNamespace(nsp);
   std::lock_guard<std::mutex> lock(sessionsMutex);
-  if (sessions.find(sid) == sessions.end()) {
+  const auto sessionIt = sessions.find(sid);
+  if (sessionIt == sessions.end()) {
     return;
   }
-  roomMembers[room].insert(sid);
-  sessionRooms[sid].insert(room);
+  if (sessionIt->second.connectedNamespaces.find(normalizedNsp) ==
+      sessionIt->second.connectedNamespaces.end()) {
+    return;
+  }
+  roomMembers[roomKey].insert(sid);
+  sessionRooms[sid].insert(roomKey);
 }
 
-void Server::broadcastToRoom(const std::string& room, const std::string& packet)
+void Server::leaveRoom(const std::string& sid, const std::string& nsp, const std::string& room)
 {
-  if (room.empty() || packet.empty()) {
+  if (room.empty()) {
+    return;
+  }
+  const std::string roomKey = makeRoomKey(nsp, room);
+  std::lock_guard<std::mutex> lock(sessionsMutex);
+  const auto membersIt = roomMembers.find(roomKey);
+  if (membersIt != roomMembers.end()) {
+    membersIt->second.erase(sid);
+    if (membersIt->second.empty()) {
+      roomMembers.erase(membersIt);
+    }
+  }
+  const auto sessionRoomsIt = sessionRooms.find(sid);
+  if (sessionRoomsIt != sessionRooms.end()) {
+    sessionRoomsIt->second.erase(roomKey);
+    if (sessionRoomsIt->second.empty()) {
+      sessionRooms.erase(sessionRoomsIt);
+    }
+  }
+}
+
+void Server::broadcastToRoom(
+    const std::string& nsp, const std::string& room, const std::string& packet, const std::string& excludeSid)
+{
+  if (nsp.empty() || room.empty() || packet.empty()) {
     return;
   }
 
+  const std::string roomKey = makeRoomKey(nsp, room);
   std::vector<std::string> targets;
   {
     std::lock_guard<std::mutex> lock(sessionsMutex);
-    const auto membersIt = roomMembers.find(room);
+    const auto membersIt = roomMembers.find(roomKey);
     if (membersIt == roomMembers.end()) {
       return;
     }
@@ -216,27 +299,31 @@ void Server::broadcastToRoom(const std::string& room, const std::string& packet)
   }
 
   for (const std::string& sid : targets) {
+    if (!excludeSid.empty() && sid == excludeSid) {
+      continue;
+    }
     enqueuePacket(sid, packet);
   }
 }
 
 void Server::emitToRoomEvent(
-    const std::string& room, const std::string& eventName, const std::string& jsonObjectPayload)
+    const std::string& nsp, const std::string& room, const std::string& eventName,
+    const std::string& jsonObjectPayload, const std::string& excludeSid)
 {
-  broadcastToRoom(room, protocol::makeSocketIoEventPacket(eventName, jsonObjectPayload));
+  broadcastToRoom(nsp, room, protocol::makeSocketIoEventPacket(eventName, jsonObjectPayload, nsp), excludeSid);
 }
 
 void Server::dispatchSocketIoEvent(
     const std::string& sid, const std::string& packet, const std::function<void(const std::string&)>& sendPacket)
 {
   std::string ackId;
-  std::string eventPayload;
-  if (!protocol::parseSocketIoEventPacket(packet, ackId, eventPayload)) {
+  protocol::SocketIoEventPacket eventPacket;
+  if (!protocol::parseSocketIoEventPacket(packet, eventPacket)) {
     return;
   }
 
-  const std::string eventName = protocol::parseSocketIoEventName(eventPayload);
-  const std::string eventData = protocol::parseSocketIoEventData(eventPayload);
+  const std::string eventName = protocol::parseSocketIoEventName(eventPacket.eventPayload);
+  const std::string eventData = protocol::parseSocketIoEventData(eventPacket.eventPayload);
   if (eventName.empty()) {
     return;
   }
@@ -250,14 +337,14 @@ void Server::dispatchSocketIoEvent(
     return;
   }
 
-  const AckCallback ack = [ackId, sendPacket](const std::string& ackJsonArrayPayload) {
-    if (ackId.empty()) {
+  const AckCallback ack = [eventPacket, sendPacket](const std::string& ackJsonArrayPayload) {
+    if (eventPacket.ackId.empty()) {
       return;
     }
-    sendPacket(protocol::makeSocketIoAckPacket(ackId, ackJsonArrayPayload));
+    sendPacket(protocol::makeSocketIoAckPacket(eventPacket.ackId, ackJsonArrayPayload, eventPacket.nsp));
   };
 
-  handlerCopy(*this, sid, eventName, eventData, ack);
+  handlerCopy(*this, sid, eventPacket.nsp, eventName, eventData, ack);
 }
 
 void Server::enqueuePacket(const std::string& sid, const std::string& packet)

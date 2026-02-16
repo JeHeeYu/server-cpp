@@ -34,19 +34,14 @@ void Server::processEngineIoPacket(const std::string& sid, const std::string& pa
   }
 
   if (packetType == protocol::SocketIoPacketType::connect) {
-    {
-      std::lock_guard<std::mutex> lock(sessionsMutex);
-      auto it = sessions.find(sid);
-      if (it != sessions.end()) {
-        it->second.namespaceConnected = true;
-      }
-    }
-    enqueuePacket(sid, protocol::makeSocketIoConnectPacket(sid));
+    const std::string nsp = protocol::parseSocketIoNamespace(packet);
+    connectNamespace(sid, nsp);
+    enqueuePacket(sid, protocol::makeSocketIoConnectPacket(sid, nsp));
     return;
   }
 
   if (packetType == protocol::SocketIoPacketType::disconnect) {
-    removeSession(sid);
+    disconnectNamespace(sid, protocol::parseSocketIoNamespace(packet));
     return;
   }
 
@@ -95,6 +90,7 @@ bool Server::handleHttpRequest(const std::string& request, std::string& response
       SessionState session;
       session.sid = sid;
       session.lastSeenAt = std::chrono::steady_clock::now();
+      session.connectedNamespaces.insert("/");
       {
         std::lock_guard<std::mutex> lock(sessionsMutex);
         sessions.emplace(sid, std::move(session));

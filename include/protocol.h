@@ -24,6 +24,7 @@ enum class SocketIoPacketType {
 bool isEngineIoVersion4(const std::string& version);
 bool isPollingTransport(const std::string& transport);
 bool isWebSocketTransport(const std::string& transport);
+std::string normalizeNamespace(const std::string& nsp);
 
 EngineIoControlPacket parseEngineIoControlPacket(const std::string& packet);
 SocketIoPacketType parseSocketIoPacketType(const std::string& packet);
@@ -32,17 +33,27 @@ std::string toWirePacket(EngineIoControlPacket packetType);
 std::string makeEngineIoOpenPacket(const std::string& sid);
 std::string makeEngineIoProbePongPacket();
 std::string makeEngineIoUpgradePacket();
-std::string makeSocketIoConnectPacket(const std::string& sid);
+std::string makeSocketIoConnectPacket(const std::string& sid, const std::string& nsp = "/");
 std::string makeSocketIoAckPacket(const std::string& ackId);
-std::string makeSocketIoAckPacket(const std::string& ackId, const std::string& ackJsonArrayPayload);
-std::string makeSocketIoEventPacket(const std::string& eventName, const std::string& jsonObjectPayload);
+std::string makeSocketIoAckPacket(
+    const std::string& ackId, const std::string& ackJsonArrayPayload, const std::string& nsp = "/");
+std::string makeSocketIoEventPacket(
+    const std::string& eventName, const std::string& jsonObjectPayload, const std::string& nsp = "/");
 
 bool hasPingEventName(const std::string& payload);
 bool isEngineIoProbePingPacket(const std::string& packet);
 bool isEngineIoUpgradePacket(const std::string& packet);
 std::size_t socketIoPayloadStartOffset(SocketIoPacketType packetType);
+std::string parseSocketIoNamespace(const std::string& packet);
+
+struct SocketIoEventPacket {
+  std::string nsp = "/";
+  std::string ackId;
+  std::string eventPayload;
+};
+
 bool parseSocketIoEventPacket(
-    const std::string& packet, std::string& ackIdOut, std::string& eventPayloadOut);
+    const std::string& packet, SocketIoEventPacket& eventPacketOut);
 std::string parseSocketIoEventName(const std::string& eventPayload);
 std::string parseSocketIoEventData(const std::string& eventPayload);
 std::string parseSocketIoStringField(const std::string& eventPayload, const std::string& fieldName);

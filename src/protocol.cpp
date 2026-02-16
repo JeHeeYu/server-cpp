@@ -2,6 +2,19 @@
 
 namespace socketIoServer::protocol {
 
+namespace {
+
+std::string namespacePrefix(const std::string& packetTypeCode, const std::string& nsp)
+{
+  const std::string normalized = normalizeNamespace(nsp);
+  if (normalized == "/") {
+    return packetTypeCode;
+  }
+  return packetTypeCode + normalized + ",";
+}
+
+}  // namespace
+
 bool isEngineIoVersion4(const std::string& version)
 {
   return version == "4";
@@ -15,6 +28,17 @@ bool isPollingTransport(const std::string& transport)
 bool isWebSocketTransport(const std::string& transport)
 {
   return transport == "websocket";
+}
+
+std::string normalizeNamespace(const std::string& nsp)
+{
+  if (nsp.empty()) {
+    return "/";
+  }
+  if (nsp[0] != '/') {
+    return "/" + nsp;
+  }
+  return nsp;
 }
 
 EngineIoControlPacket parseEngineIoControlPacket(const std::string& packet)
@@ -81,9 +105,9 @@ std::string makeEngineIoUpgradePacket()
   return "5";
 }
 
-std::string makeSocketIoConnectPacket(const std::string& sid)
+std::string makeSocketIoConnectPacket(const std::string& sid, const std::string& nsp)
 {
-  return "40{\"sid\":\"" + sid + "\"}";
+  return namespacePrefix("40", nsp) + "{\"sid\":\"" + sid + "\"}";
 }
 
 std::string makeSocketIoAckPacket(const std::string& ackId)
@@ -91,17 +115,20 @@ std::string makeSocketIoAckPacket(const std::string& ackId)
   return "43" + ackId + "[{\"ok\":true}]";
 }
 
-std::string makeSocketIoAckPacket(const std::string& ackId, const std::string& ackJsonArrayPayload)
+std::string makeSocketIoAckPacket(
+    const std::string& ackId, const std::string& ackJsonArrayPayload, const std::string& nsp)
 {
+  const std::string prefix = namespacePrefix("43", nsp);
   if (ackJsonArrayPayload.empty()) {
-    return "43" + ackId + "[]";
+    return prefix + ackId + "[]";
   }
-  return "43" + ackId + ackJsonArrayPayload;
+  return prefix + ackId + ackJsonArrayPayload;
 }
 
-std::string makeSocketIoEventPacket(const std::string& eventName, const std::string& jsonObjectPayload)
+std::string makeSocketIoEventPacket(
+    const std::string& eventName, const std::string& jsonObjectPayload, const std::string& nsp)
 {
-  return "42[\"" + eventName + "\"," + jsonObjectPayload + "]";
+  return namespacePrefix("42", nsp) + "[\"" + eventName + "\"," + jsonObjectPayload + "]";
 }
 
 bool hasPingEventName(const std::string& payload)
@@ -128,22 +155,48 @@ std::size_t socketIoPayloadStartOffset(SocketIoPacketType packetType)
   return 0;
 }
 
-bool parseSocketIoEventPacket(
-    const std::string& packet, std::string& ackIdOut, std::string& eventPayloadOut)
+std::string parseSocketIoNamespace(const std::string& packet)
 {
-  ackIdOut.clear();
-  eventPayloadOut.clear();
+  const SocketIoPacketType packetType = parseSocketIoPacketType(packet);
+  if (packetType == SocketIoPacketType::unknown) {
+    return "/";
+  }
+
+  std::size_t pos = socketIoPayloadStartOffset(packetType);
+  if (pos >= packet.size() || packet[pos] != '/') {
+    return "/";
+  }
+
+  const std::size_t endPos = packet.find(',', pos);
+  if (endPos == std::string::npos) {
+    return normalizeNamespace(packet.substr(pos));
+  }
+  return normalizeNamespace(packet.substr(pos, endPos - pos));
+}
+
+bool parseSocketIoEventPacket(const std::string& packet, SocketIoEventPacket& eventPacketOut)
+{
+  eventPacketOut = SocketIoEventPacket{};
 
   if (parseSocketIoPacketType(packet) != SocketIoPacketType::event) {
     return false;
   }
 
   std::size_t pos = socketIoPayloadStartOffset(SocketIoPacketType::event);
+  if (pos < packet.size() && packet[pos] == '/') {
+    const std::size_t endPos = packet.find(',', pos);
+    if (endPos == std::string::npos) {
+      return false;
+    }
+    eventPacketOut.nsp = normalizeNamespace(packet.substr(pos, endPos - pos));
+    pos = endPos + 1;
+  }
+
   while (pos < packet.size() && packet[pos] >= '0' && packet[pos] <= '9') {
-    ackIdOut.push_back(packet[pos]);
+    eventPacketOut.ackId.push_back(packet[pos]);
     ++pos;
   }
-  eventPayloadOut = packet.substr(pos);
+  eventPacketOut.eventPayload = packet.substr(pos);
   return true;
 }
 

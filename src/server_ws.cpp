@@ -46,6 +46,7 @@ bool Server::handleWebSocketHandshake(
     SessionState session;
     session.sid = sid;
     session.lastSeenAt = std::chrono::steady_clock::now();
+    session.connectedNamespaces.insert("/");
     {
       std::lock_guard<std::mutex> lock(sessionsMutex);
       sessions.emplace(sid, std::move(session));
@@ -109,14 +110,9 @@ void Server::serveWebSocket(int clientFd, const std::string& sid)
 
     const protocol::SocketIoPacketType packetType = protocol::parseSocketIoPacketType(packet);
     if (packetType == protocol::SocketIoPacketType::connect) {
-      {
-        std::lock_guard<std::mutex> lock(sessionsMutex);
-        auto it = sessions.find(sid);
-        if (it != sessions.end()) {
-          it->second.namespaceConnected = true;
-        }
-      }
-      if (!utils::sendWebSocketTextFrame(clientFd, protocol::makeSocketIoConnectPacket(sid))) {
+      const std::string nsp = protocol::parseSocketIoNamespace(packet);
+      connectNamespace(sid, nsp);
+      if (!utils::sendWebSocketTextFrame(clientFd, protocol::makeSocketIoConnectPacket(sid, nsp))) {
         break;
       }
       continue;
@@ -136,8 +132,8 @@ void Server::serveWebSocket(int clientFd, const std::string& sid)
     }
 
     if (packetType == protocol::SocketIoPacketType::disconnect) {
-      removeSession(sid);
-      break;
+      disconnectNamespace(sid, protocol::parseSocketIoNamespace(packet));
+      continue;
     }
   }
 

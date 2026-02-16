@@ -19,8 +19,9 @@ int main()
 
   socketIoServer::Server server(config);
   server.setEventHandler(
-      [](socketIoServer::Server& serverRef, const std::string& sid, const std::string& eventName,
-          const std::string& eventData, const socketIoServer::Server::AckCallback& ack) {
+      [](socketIoServer::Server& serverRef, const std::string& sid, const std::string& nsp,
+          const std::string& eventName, const std::string& eventData,
+          const socketIoServer::Server::AckCallback& ack) {
         if (eventName == "ping") {
           ack("[{\"ok\":true}]");
           return;
@@ -29,7 +30,7 @@ int main()
         if (eventName == "join_room") {
           const std::string room = socketIoServer::protocol::parseSocketIoStringField(eventData, "room");
           if (!room.empty()) {
-            serverRef.joinRoom(sid, room);
+            serverRef.joinRoom(sid, nsp, room);
           }
           ack("[{\"ok\":true}]");
           return;
@@ -41,7 +42,7 @@ int main()
           if (!room.empty()) {
             const std::string body =
                 "{\"room\":\"" + room + "\",\"from\":\"" + sid + "\",\"message\":\"" + message + "\"}";
-            serverRef.emitToRoomEvent(room, "room_message", body);
+            serverRef.emitToRoomEvent(nsp, room, "room_message", body);
           }
           ack("[{\"ok\":true}]");
         }
