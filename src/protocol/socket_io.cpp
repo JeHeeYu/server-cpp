@@ -1,4 +1,5 @@
 #include "protocol/types.h"
+#include "utils/json_util.h"
 
 #include <boost/json.hpp>
 #include <boost/system/error_code.hpp>
@@ -22,25 +23,25 @@ std::string namespacePrefix(const std::string& packetTypeCode, const std::string
 
 SocketIoPacketType parseSocketIoPacketType(const std::string& packet)
 {
-  if (packet.rfind("40", 0) == 0) {
+  if (packet.rfind(kSocketIoPacketConnectPrefix, 0) == 0) {
     return SocketIoPacketType::connect;
   }
-  if (packet.rfind("44", 0) == 0) {
+  if (packet.rfind(kSocketIoPacketConnectErrorPrefix, 0) == 0) {
     return SocketIoPacketType::connectError;
   }
-  if (packet.rfind("41", 0) == 0) {
+  if (packet.rfind(kSocketIoPacketDisconnectPrefix, 0) == 0) {
     return SocketIoPacketType::disconnect;
   }
-  if (packet.rfind("42", 0) == 0) {
+  if (packet.rfind(kSocketIoPacketEventPrefix, 0) == 0) {
     return SocketIoPacketType::event;
   }
-  if (packet.rfind("43", 0) == 0) {
+  if (packet.rfind(kSocketIoPacketAckPrefix, 0) == 0) {
     return SocketIoPacketType::ack;
   }
-  if (packet.rfind("45", 0) == 0) {
+  if (packet.rfind(kSocketIoPacketBinaryEventPrefix, 0) == 0) {
     return SocketIoPacketType::binaryEvent;
   }
-  if (packet.rfind("46", 0) == 0) {
+  if (packet.rfind(kSocketIoPacketBinaryAckPrefix, 0) == 0) {
     return SocketIoPacketType::binaryAck;
   }
   return SocketIoPacketType::unknown;
@@ -58,23 +59,24 @@ std::size_t socketIoPayloadStartOffset(SocketIoPacketType packetType)
 
 std::string makeSocketIoConnectPacket(const std::string& sid, const std::string& nsp)
 {
-  return namespacePrefix("40", nsp) + "{\"sid\":\"" + sid + "\"}";
+  return namespacePrefix(kSocketIoPacketConnectPrefix, nsp) + utils::makeSocketIoConnectPayload(sid);
 }
 
 std::string makeSocketIoConnectErrorPacket(const std::string& nsp, int code, const std::string& message)
 {
-  return namespacePrefix("44", nsp) + "{\"message\":\"" + message + "\",\"code\":" + std::to_string(code) + "}";
+  return namespacePrefix(kSocketIoPacketConnectErrorPrefix, nsp) +
+         utils::makeSocketIoConnectErrorPayload(code, message);
 }
 
 std::string makeSocketIoAckPacket(const std::string& ackId)
 {
-  return "43" + ackId + "[{\"ok\":true}]";
+  return std::string(kSocketIoPacketAckPrefix) + ackId + utils::makeSocketIoAckOkPayload();
 }
 
 std::string makeSocketIoAckPacket(
     const std::string& ackId, const std::string& ackJsonArrayPayload, const std::string& nsp)
 {
-  const std::string prefix = namespacePrefix("43", nsp);
+  const std::string prefix = namespacePrefix(kSocketIoPacketAckPrefix, nsp);
   if (ackJsonArrayPayload.empty()) {
     return prefix + ackId + "[]";
   }
@@ -84,13 +86,13 @@ std::string makeSocketIoAckPacket(
 std::string makeSocketIoEventPacket(
     const std::string& eventName, const std::string& jsonObjectPayload, const std::string& nsp)
 {
-  return namespacePrefix("42", nsp) + "[\"" + eventName + "\"," + jsonObjectPayload + "]";
+  return namespacePrefix(kSocketIoPacketEventPrefix, nsp) +
+         utils::makeSocketIoEventArrayPayload(eventName, jsonObjectPayload);
 }
 
 std::string makeSocketIoErrorEventPacket(const std::string& nsp, int code, const std::string& message)
 {
-  return makeSocketIoEventPacket(
-      "server_error", "{\"code\":" + std::to_string(code) + ",\"message\":\"" + message + "\"}", nsp);
+  return makeSocketIoEventPacket(kSocketIoServerErrorEventName, utils::makeServerErrorPayload(code, message), nsp);
 }
 
 bool hasPingEventName(const std::string& payload)

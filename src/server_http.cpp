@@ -1,4 +1,5 @@
 #include "server.h"
+#include "constants.h"
 #include "protocol/types.h"
 #include "utils/engine_io_util.h"
 #include "utils/http_util.h"
@@ -37,7 +38,8 @@ void Server::processEngineIoPacket(const std::string& sid, const std::string& pa
     protocol::SocketIoConnectPacket connectPacket;
     if (!protocol::parseSocketIoConnectPacket(packet, connectPacket)) {
       enqueuePacket(
-          sid, protocol::makeSocketIoConnectErrorPacket("/", 4001, "malformed connect packet"));
+          sid, protocol::makeSocketIoConnectErrorPacket(
+                   "/", constants::kCodeMalformedConnectPacket, constants::kMessageMalformedConnectPacket));
       return;
     }
 
@@ -76,7 +78,7 @@ bool Server::handleHttpRequest(const std::string& request, std::string& response
   utils::splitTarget(target, path, queryString);
 
   if (path == "/") {
-    response = utils::makeHttpResponse("200 OK", "socketIoServerCpp alive\n");
+    response = utils::makeHttpResponse(constants::kHttpStatusOk, constants::kBodyAlive);
     return true;
   }
 
@@ -88,12 +90,12 @@ bool Server::handleHttpRequest(const std::string& request, std::string& response
   const auto eioIt = query.find("EIO");
   const auto transportIt = query.find("transport");
   if (eioIt == query.end() || transportIt == query.end()) {
-    response = utils::makeHttpResponse("400 Bad Request", "missing query");
+    response = utils::makeHttpResponse(constants::kHttpStatusBadRequest, constants::kBodyMissingQuery);
     return true;
   }
 
   if (!protocol::isEngineIoVersion4(eioIt->second) || !protocol::isPollingTransport(transportIt->second)) {
-    response = utils::makeHttpResponse("400 Bad Request", "unsupported transport");
+    response = utils::makeHttpResponse(constants::kHttpStatusBadRequest, constants::kBodyUnsupportedTransport);
     return true;
   }
 
@@ -110,7 +112,7 @@ bool Server::handleHttpRequest(const std::string& request, std::string& response
         sessions.emplace(sid, std::move(session));
       }
       const std::string openPacket = protocol::makeEngineIoOpenPacket(sid);
-      response = utils::makeHttpResponse("200 OK", openPacket);
+      response = utils::makeHttpResponse(constants::kHttpStatusOk, openPacket);
       return true;
     }
 
@@ -119,7 +121,7 @@ bool Server::handleHttpRequest(const std::string& request, std::string& response
       std::lock_guard<std::mutex> lock(sessionsMutex);
       const auto it = sessions.find(sidIt->second);
       if (it == sessions.end()) {
-        response = utils::makeHttpResponse("400 Bad Request", "unknown sid");
+        response = utils::makeHttpResponse(constants::kHttpStatusBadRequest, constants::kBodyUnknownSid);
         return true;
       }
       it->second.lastSeenAt = std::chrono::steady_clock::now();
@@ -127,24 +129,24 @@ bool Server::handleHttpRequest(const std::string& request, std::string& response
     }
 
     if (pendingPackets.empty()) {
-      response = utils::makeHttpResponse("200 OK", "6");
+      response = utils::makeHttpResponse(constants::kHttpStatusOk, protocol::kEngineIoPacketNoop);
       return true;
     }
 
-    response = utils::makeHttpResponse("200 OK", utils::joinEngineIoPayload(pendingPackets));
+    response = utils::makeHttpResponse(constants::kHttpStatusOk, utils::joinEngineIoPayload(pendingPackets));
     return true;
   }
 
   if (method == "POST") {
     const auto sidIt = query.find("sid");
     if (sidIt == query.end()) {
-      response = utils::makeHttpResponse("400 Bad Request", "missing sid");
+      response = utils::makeHttpResponse(constants::kHttpStatusBadRequest, constants::kBodyMissingSid);
       return true;
     }
 
     const std::string sid = sidIt->second;
     if (!hasSession(sid)) {
-      response = utils::makeHttpResponse("400 Bad Request", "unknown sid");
+      response = utils::makeHttpResponse(constants::kHttpStatusBadRequest, constants::kBodyUnknownSid);
       return true;
     }
     touchSession(sid);
@@ -155,11 +157,11 @@ bool Server::handleHttpRequest(const std::string& request, std::string& response
       processEngineIoPacket(sid, packet);
     }
 
-    response = utils::makeHttpResponse("200 OK", "ok");
+    response = utils::makeHttpResponse(constants::kHttpStatusOk, constants::kBodyOk);
     return true;
   }
 
-  response = utils::makeHttpResponse("405 Method Not Allowed", "method not allowed");
+  response = utils::makeHttpResponse(constants::kHttpStatusMethodNotAllowed, constants::kBodyMethodNotAllowed);
   return true;
 }
 

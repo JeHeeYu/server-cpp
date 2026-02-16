@@ -1,9 +1,34 @@
 #pragma once
 
 #include <cstddef>
+#include <cstdint>
 #include <string>
 
 namespace socketIoServer::protocol {
+
+inline constexpr const char* kEngineIoVersion = "4";
+inline constexpr const char* kEngineIoTransportPolling = "polling";
+inline constexpr const char* kEngineIoTransportWebSocket = "websocket";
+inline constexpr const char* kEngineIoPacketOpenPrefix = "0";
+inline constexpr const char* kEngineIoPacketClose = "1";
+inline constexpr const char* kEngineIoPacketPing = "2";
+inline constexpr const char* kEngineIoPacketPong = "3";
+inline constexpr const char* kEngineIoPacketUpgrade = "5";
+inline constexpr const char* kEngineIoPacketNoop = "6";
+inline constexpr const char* kEngineIoPacketProbePing = "2probe";
+inline constexpr const char* kEngineIoPacketProbePong = "3probe";
+inline constexpr std::uint32_t kEngineIoDefaultPingIntervalMs = 25000;
+inline constexpr std::uint32_t kEngineIoDefaultPingTimeoutMs = 20000;
+inline constexpr std::uint32_t kEngineIoDefaultMaxPayload = 1000000;
+
+inline constexpr const char* kSocketIoPacketConnectPrefix = "40";
+inline constexpr const char* kSocketIoPacketConnectErrorPrefix = "44";
+inline constexpr const char* kSocketIoPacketDisconnectPrefix = "41";
+inline constexpr const char* kSocketIoPacketEventPrefix = "42";
+inline constexpr const char* kSocketIoPacketAckPrefix = "43";
+inline constexpr const char* kSocketIoPacketBinaryEventPrefix = "45";
+inline constexpr const char* kSocketIoPacketBinaryAckPrefix = "46";
+inline constexpr const char* kSocketIoServerErrorEventName = "server_error";
 
 enum class EngineIoControlPacket {
   unknown,
@@ -27,7 +52,7 @@ enum class SocketIoPacketType {
 bool isEngineIoVersion4(const std::string& version);
 bool isPollingTransport(const std::string& transport);
 bool isWebSocketTransport(const std::string& transport);
-std::string normalizeNamespace(const std::string& nsp); 
+std::string normalizeNamespace(const std::string& nsp);
 
 EngineIoControlPacket parseEngineIoControlPacket(const std::string& packet);
 SocketIoPacketType parseSocketIoPacketType(const std::string& packet);

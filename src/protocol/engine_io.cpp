@@ -1,34 +1,35 @@
 #include "protocol/types.h"
+#include "utils/json_util.h"
 
 namespace socketIoServer::protocol {
 
 bool isEngineIoVersion4(const std::string& version)
 {
-  return version == "4";
+  return version == kEngineIoVersion;
 }
 
 bool isPollingTransport(const std::string& transport)
 {
-  return transport == "polling";
+  return transport == kEngineIoTransportPolling;
 }
 
 bool isWebSocketTransport(const std::string& transport)
 {
-  return transport == "websocket";
+  return transport == kEngineIoTransportWebSocket;
 }
 
 EngineIoControlPacket parseEngineIoControlPacket(const std::string& packet)
 {
-  if (packet == "1") {
+  if (packet == kEngineIoPacketClose) {
     return EngineIoControlPacket::close;
   }
-  if (packet == "2") {
+  if (packet == kEngineIoPacketPing) {
     return EngineIoControlPacket::ping;
   }
-  if (packet == "3") {
+  if (packet == kEngineIoPacketPong) {
     return EngineIoControlPacket::pong;
   }
-  if (packet == "6") {
+  if (packet == kEngineIoPacketNoop) {
     return EngineIoControlPacket::noop;
   }
   return EngineIoControlPacket::unknown;
@@ -37,41 +38,42 @@ EngineIoControlPacket parseEngineIoControlPacket(const std::string& packet)
 std::string toWirePacket(EngineIoControlPacket packetType)
 {
   if (packetType == EngineIoControlPacket::ping) {
-    return "2";
+    return kEngineIoPacketPing;
   }
   if (packetType == EngineIoControlPacket::pong) {
-    return "3";
+    return kEngineIoPacketPong;
   }
   if (packetType == EngineIoControlPacket::noop) {
-    return "6";
+    return kEngineIoPacketNoop;
   }
   return "";
 }
 
 std::string makeEngineIoOpenPacket(const std::string& sid)
 {
-  return "0{\"sid\":\"" + sid +
-         "\",\"upgrades\":[\"websocket\"],\"pingInterval\":25000,\"pingTimeout\":20000,\"maxPayload\":1000000}";
+  return std::string(kEngineIoPacketOpenPrefix) +
+         utils::makeEngineIoOpenPayload(
+             sid, kEngineIoDefaultPingIntervalMs, kEngineIoDefaultPingTimeoutMs, kEngineIoDefaultMaxPayload);
 }
 
 std::string makeEngineIoProbePongPacket()
 {
-  return "3probe";
+  return kEngineIoPacketProbePong;
 }
 
 std::string makeEngineIoUpgradePacket()
 {
-  return "5";
+  return kEngineIoPacketUpgrade;
 }
 
 bool isEngineIoProbePingPacket(const std::string& packet)
 {
-  return packet == "2probe";
+  return packet == kEngineIoPacketProbePing;
 }
 
 bool isEngineIoUpgradePacket(const std::string& packet)
 {
-  return packet == "5";
+  return packet == kEngineIoPacketUpgrade;
 }
 
 }  // namespace socketIoServer::protocol

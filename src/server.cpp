@@ -1,4 +1,5 @@
 #include "server.h"
+#include "constants.h"
 #include "protocol/types.h"
 #include "utils/http_util.h"
 #include "utils/url_util.h"
@@ -385,19 +386,22 @@ void Server::dispatchSocketIoEvent(
 {
   protocol::SocketIoEventPacket eventPacket;
   if (!protocol::parseSocketIoEventPacket(packet, eventPacket)) {
-    sendPacket(protocol::makeSocketIoErrorEventPacket("/", 4002, "malformed event packet"));
+    sendPacket(protocol::makeSocketIoErrorEventPacket(
+        "/", constants::kCodeMalformedEventPacket, constants::kMessageMalformedEventPacket));
     return;
   }
 
   if (!isNamespaceConnected(sid, eventPacket.nsp)) {
-    sendPacket(protocol::makeSocketIoErrorEventPacket(eventPacket.nsp, 4003, "namespace not connected"));
+    sendPacket(protocol::makeSocketIoErrorEventPacket(
+        eventPacket.nsp, constants::kCodeNamespaceNotConnected, constants::kMessageNamespaceNotConnected));
     return;
   }
 
   const std::string eventName = protocol::parseSocketIoEventName(eventPacket.eventPayload);
   const std::string eventData = protocol::parseSocketIoEventData(eventPacket.eventPayload);
   if (eventName.empty()) {
-    sendPacket(protocol::makeSocketIoErrorEventPacket(eventPacket.nsp, 4004, "empty event name"));
+    sendPacket(protocol::makeSocketIoErrorEventPacket(
+        eventPacket.nsp, constants::kCodeEmptyEventName, constants::kMessageEmptyEventName));
     return;
   }
 
@@ -467,7 +471,7 @@ void Server::handleClient(int clientFd)
     std::string response;
     const bool handled = handleHttpRequest(request, response);
     if (!handled) {
-      response = utils::makeHttpResponse("404 Not Found", "not found");
+      response = utils::makeHttpResponse(constants::kHttpStatusNotFound, constants::kBodyNotFound);
     }
     (void)::send(clientFd, response.c_str(), response.size(), 0);
   }

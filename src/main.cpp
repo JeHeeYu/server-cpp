@@ -2,8 +2,8 @@
 #include <cstdlib>
 #include <string>
 
-#include "protocol/types.h"
 #include "server.h"
+#include "server_handlers.h"
 
 int main()
 {
@@ -18,67 +18,7 @@ int main()
   }
 
   socketIoServer::Server server(config);
-  server.setEventGuardHandler(
-      [](socketIoServer::Server&, const std::string&, const std::string&, const std::string& eventName,
-          const std::string&) {
-        if (eventName == "forbidden_event") {
-          return socketIoServer::Server::ConnectDecision{false, 4032, "event forbidden"};
-        }
-        return socketIoServer::Server::ConnectDecision{};
-      });
-
-  server.setNamespaceConnectHandler(
-      [](socketIoServer::Server&, const std::string&, const std::string& nsp, const std::string& authJson) {
-        if (nsp == "/blocked") {
-          return socketIoServer::Server::ConnectDecision{false, 403, "namespace blocked"};
-        }
-        if (nsp == "/secure") {
-          if (authJson.find("\"token\":\"allow\"") == std::string::npos) {
-            return socketIoServer::Server::ConnectDecision{false, 401, "unauthorized"};
-          }
-        }
-        return socketIoServer::Server::ConnectDecision{};
-      });
-
-  server.setEventHandler(
-      [](socketIoServer::Server& serverRef, const std::string& sid, const std::string& nsp,
-          const std::string& eventName, const std::string& eventData,
-          const socketIoServer::Server::AckCallback& ack) {
-        if (eventName == "ping") {
-          ack("[{\"ok\":true}]");
-          return;
-        }
-
-        if (eventName == "join_room") {
-          const std::string room = socketIoServer::protocol::parseSocketIoStringField(eventData, "room");
-          if (!room.empty()) {
-            serverRef.joinRoom(sid, nsp, room);
-          }
-          ack("[{\"ok\":true}]");
-          return;
-        }
-
-        if (eventName == "room_ping") {
-          const std::string room = socketIoServer::protocol::parseSocketIoStringField(eventData, "room");
-          const std::string message = socketIoServer::protocol::parseSocketIoStringField(eventData, "message");
-          if (!room.empty()) {
-            const std::string body =
-                "{\"room\":\"" + room + "\",\"from\":\"" + sid + "\",\"message\":\"" + message + "\"}";
-            serverRef.emitToRoomEvent(nsp, room, "room_message", body, sid);
-          }
-          ack("[{\"ok\":true}]");
-          return;
-        }
-
-        if (eventName == "leave_room") {
-          const std::string room = socketIoServer::protocol::parseSocketIoStringField(eventData, "room");
-          if (!room.empty()) {
-            serverRef.leaveRoom(sid, nsp, room);
-          }
-          ack("[{\"ok\":true}]");
-          return;
-        }
-      });
+  socketIoServerHandlers::registerDefaultHandlers(server);
 
   if (!server.start()) {
     std::cerr << "Failed to start socketIoServerCpp" << std::endl;

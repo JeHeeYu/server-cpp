@@ -1,4 +1,5 @@
 #include "server.h"
+#include "constants.h"
 #include "protocol/types.h"
 #include "utils/websocket_util.h"
 
@@ -130,7 +131,9 @@ void Server::serveWebSocket(int clientFd, const std::string& sid)
       protocol::SocketIoConnectPacket connectPacket;
       if (!protocol::parseSocketIoConnectPacket(packet, connectPacket)) {
         if (!utils::sendWebSocketTextFrame(
-                clientFd, protocol::makeSocketIoConnectErrorPacket("/", 4001, "malformed connect packet"))) {
+                clientFd,
+                protocol::makeSocketIoConnectErrorPacket(
+                    "/", constants::kCodeMalformedConnectPacket, constants::kMessageMalformedConnectPacket))) {
           break;
         }
         continue;

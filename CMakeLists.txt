@@ -17,6 +17,7 @@ add_library(socketIoServerCore
   src/protocol/namespace.cpp
   src/protocol/socket_io.cpp
   src/utils/http_util.cpp
+  src/utils/json_util.cpp
   src/utils/url_util.cpp
   src/utils/engine_io_util.cpp
   src/utils/websocket_util.cpp
@@ -34,5 +35,8 @@ target_link_libraries(socketIoServerCore
     Boost::json
 )
 
-add_executable(socketIoServerCpp src/main.cpp)
+add_executable(socketIoServerCpp
+  src/main.cpp
+  src/server_handlers.cpp
+)
 target_link_libraries(socketIoServerCpp PRIVATE socketIoServerCore)
