@@ -219,4 +219,38 @@ void Server::emitToRoomEventVolatile(
       nsp, room, protocol::makeSocketIoEventPacket(eventName, jsonObjectPayload, nsp), true, excludedSids);
 }
 
+void Server::emitToRoomsEvent(
+    const std::string& nsp, const std::vector<std::string>& rooms, const std::string& eventName,
+    const std::string& jsonObjectPayload, const std::vector<std::string>& excludedSids)
+{
+  if (rooms.empty()) {
+    return;
+  }
+
+  const std::string packet = protocol::makeSocketIoEventPacket(eventName, jsonObjectPayload, nsp);
+  for (const std::string& room : rooms) {
+    if (room.empty()) {
+      continue;
+    }
+    broadcastToRoom(nsp, room, packet, false, excludedSids);
+  }
+}
+
+void Server::emitToRoomsEventVolatile(
+    const std::string& nsp, const std::vector<std::string>& rooms, const std::string& eventName,
+    const std::string& jsonObjectPayload, const std::vector<std::string>& excludedSids)
+{
+  if (rooms.empty()) {
+    return;
+  }
+
+  const std::string packet = protocol::makeSocketIoEventPacket(eventName, jsonObjectPayload, nsp);
+  for (const std::string& room : rooms) {
+    if (room.empty()) {
+      continue;
+    }
+    broadcastToRoom(nsp, room, packet, true, excludedSids);
+  }
+}
+
 }  // namespace socketIoServer

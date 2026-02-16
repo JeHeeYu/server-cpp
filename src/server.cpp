@@ -20,6 +20,47 @@
 
 namespace socketIoServer {
 
+Server::BroadcastBuilder::BroadcastBuilder(Server& serverRef, std::string nspValue)
+    : server(serverRef), nsp(std::move(nspValue))
+{
+}
+
+Server::BroadcastBuilder& Server::BroadcastBuilder::to(const std::string& room)
+{
+  if (!room.empty()) {
+    rooms.push_back(room);
+  }
+  return *this;
+}
+
+Server::BroadcastBuilder& Server::BroadcastBuilder::in(const std::string& room)
+{
+  return to(room);
+}
+
+Server::BroadcastBuilder& Server::BroadcastBuilder::except(const std::string& sid)
+{
+  if (!sid.empty()) {
+    excludedSids.push_back(sid);
+  }
+  return *this;
+}
+
+Server::BroadcastBuilder& Server::BroadcastBuilder::volatileBroadcast(bool enable)
+{
+  isVolatile = enable;
+  return *this;
+}
+
+void Server::BroadcastBuilder::emit(const std::string& eventName, const std::string& jsonObjectPayload)
+{
+  if (isVolatile) {
+    server.emitToRoomsEventVolatile(nsp, rooms, eventName, jsonObjectPayload, excludedSids);
+    return;
+  }
+  server.emitToRoomsEvent(nsp, rooms, eventName, jsonObjectPayload, excludedSids);
+}
+
 Server::Server(ServerConfig config) : config(std::move(config))
 {
 }
@@ -155,6 +196,18 @@ void Server::setClientAckHandler(ClientAckHandler handler)
 {
   std::lock_guard<std::mutex> lock(ackHandlerMutex);
   clientAckHandler = std::move(handler);
+}
+
+Server::BroadcastBuilder Server::to(const std::string& room, const std::string& nsp)
+{
+  BroadcastBuilder builder(*this, protocol::normalizeNamespace(nsp));
+  builder.to(room);
+  return builder;
+}
+
+Server::BroadcastBuilder Server::in(const std::string& room, const std::string& nsp)
+{
+  return to(room, nsp);
 }
 
 bool Server::emitToSidEventWithAck(

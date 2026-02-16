@@ -43,6 +43,23 @@ struct ServerConfig {
 
 class Server {
  public:
+  class BroadcastBuilder {
+   public:
+    BroadcastBuilder(Server& serverRef, std::string nspValue);
+    BroadcastBuilder& to(const std::string& room);
+    BroadcastBuilder& in(const std::string& room);
+    BroadcastBuilder& except(const std::string& sid);
+    BroadcastBuilder& volatileBroadcast(bool enable = true);
+    void emit(const std::string& eventName, const std::string& jsonObjectPayload);
+
+   private:
+    Server& server;
+    std::string nsp;
+    std::vector<std::string> rooms;
+    std::vector<std::string> excludedSids;
+    bool isVolatile = false;
+  };
+
   using AckCallback = std::function<void(const std::string& ackJsonArrayPayload)>;
   struct ConnectDecision {
     bool allowed = true;
@@ -102,6 +119,14 @@ class Server {
   void emitToRoomEventVolatile(
       const std::string& nsp, const std::string& room, const std::string& eventName,
       const std::string& jsonObjectPayload, const std::vector<std::string>& excludedSids);
+  void emitToRoomsEvent(
+      const std::string& nsp, const std::vector<std::string>& rooms, const std::string& eventName,
+      const std::string& jsonObjectPayload, const std::vector<std::string>& excludedSids = {});
+  void emitToRoomsEventVolatile(
+      const std::string& nsp, const std::vector<std::string>& rooms, const std::string& eventName,
+      const std::string& jsonObjectPayload, const std::vector<std::string>& excludedSids = {});
+  BroadcastBuilder to(const std::string& room, const std::string& nsp = "/");
+  BroadcastBuilder in(const std::string& room, const std::string& nsp = "/");
 
  private:
   struct SessionState {
