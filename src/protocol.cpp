@@ -1,5 +1,7 @@
 #include "protocol.h"
 
+#include <cstdlib>
+
 namespace socketIoServer::protocol {
 
 namespace {
@@ -71,6 +73,12 @@ SocketIoPacketType parseSocketIoPacketType(const std::string& packet)
   }
   if (packet.rfind("43", 0) == 0) {
     return SocketIoPacketType::ack;
+  }
+  if (packet.rfind("45", 0) == 0) {
+    return SocketIoPacketType::binaryEvent;
+  }
+  if (packet.rfind("46", 0) == 0) {
+    return SocketIoPacketType::binaryAck;
   }
   return SocketIoPacketType::unknown;
 }
@@ -149,7 +157,8 @@ bool isEngineIoUpgradePacket(const std::string& packet)
 std::size_t socketIoPayloadStartOffset(SocketIoPacketType packetType)
 {
   if (packetType == SocketIoPacketType::connect || packetType == SocketIoPacketType::event ||
-      packetType == SocketIoPacketType::ack) {
+      packetType == SocketIoPacketType::ack || packetType == SocketIoPacketType::binaryEvent ||
+      packetType == SocketIoPacketType::binaryAck) {
     return 2;
   }
   return 0;
@@ -163,6 +172,14 @@ std::string parseSocketIoNamespace(const std::string& packet)
   }
 
   std::size_t pos = socketIoPayloadStartOffset(packetType);
+  if (packetType == SocketIoPacketType::binaryEvent || packetType == SocketIoPacketType::binaryAck) {
+    const std::size_t dashPos = packet.find('-', pos);
+    if (dashPos == std::string::npos) {
+      return "/";
+    }
+    pos = dashPos + 1;
+  }
+
   if (pos >= packet.size() || packet[pos] != '/') {
     return "/";
   }
@@ -178,11 +195,26 @@ bool parseSocketIoEventPacket(const std::string& packet, SocketIoEventPacket& ev
 {
   eventPacketOut = SocketIoEventPacket{};
 
-  if (parseSocketIoPacketType(packet) != SocketIoPacketType::event) {
+  const SocketIoPacketType packetType = parseSocketIoPacketType(packet);
+  if (packetType != SocketIoPacketType::event && packetType != SocketIoPacketType::binaryEvent) {
     return false;
   }
 
-  std::size_t pos = socketIoPayloadStartOffset(SocketIoPacketType::event);
+  std::size_t pos = socketIoPayloadStartOffset(packetType);
+  if (packetType == SocketIoPacketType::binaryEvent) {
+    eventPacketOut.isBinary = true;
+    std::string count;
+    while (pos < packet.size() && packet[pos] >= '0' && packet[pos] <= '9') {
+      count.push_back(packet[pos]);
+      ++pos;
+    }
+    if (count.empty() || pos >= packet.size() || packet[pos] != '-') {
+      return false;
+    }
+    eventPacketOut.attachmentCount = std::atoi(count.c_str());
+    ++pos;
+  }
+
   if (pos < packet.size() && packet[pos] == '/') {
     const std::size_t endPos = packet.find(',', pos);
     if (endPos == std::string::npos) {

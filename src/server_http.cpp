@@ -45,7 +45,8 @@ void Server::processEngineIoPacket(const std::string& sid, const std::string& pa
     return;
   }
 
-  if (packetType == protocol::SocketIoPacketType::event) {
+  if (packetType == protocol::SocketIoPacketType::event ||
+      packetType == protocol::SocketIoPacketType::binaryEvent) {
     dispatchSocketIoEvent(sid, packet, [this, sid](const std::string& packetToSend) {
       enqueuePacket(sid, packetToSend);
     });

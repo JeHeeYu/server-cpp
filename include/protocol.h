@@ -24,7 +24,7 @@ enum class SocketIoPacketType {
 bool isEngineIoVersion4(const std::string& version);
 bool isPollingTransport(const std::string& transport);
 bool isWebSocketTransport(const std::string& transport);
-std::string normalizeNamespace(const std::string& nsp);
+std::string normalizeNamespace(const std::string& nsp); 
 
 EngineIoControlPacket parseEngineIoControlPacket(const std::string& packet);
 SocketIoPacketType parseSocketIoPacketType(const std::string& packet);

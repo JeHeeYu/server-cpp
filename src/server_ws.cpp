@@ -118,7 +118,8 @@ void Server::serveWebSocket(int clientFd, const std::string& sid)
       continue;
     }
 
-    if (packetType == protocol::SocketIoPacketType::event) {
+    if (packetType == protocol::SocketIoPacketType::event ||
+        packetType == protocol::SocketIoPacketType::binaryEvent) {
       bool sendFailed = false;
       dispatchSocketIoEvent(sid, packet, [clientFd, &sendFailed](const std::string& packetToSend) {
         if (!utils::sendWebSocketTextFrame(clientFd, packetToSend)) {
