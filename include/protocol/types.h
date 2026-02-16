@@ -16,6 +16,7 @@ enum class EngineIoControlPacket {
 enum class SocketIoPacketType {
   unknown,
   connect,
+  connectError,
   disconnect,
   event,
   ack,
@@ -36,6 +37,8 @@ std::string makeEngineIoOpenPacket(const std::string& sid);
 std::string makeEngineIoProbePongPacket();
 std::string makeEngineIoUpgradePacket();
 std::string makeSocketIoConnectPacket(const std::string& sid, const std::string& nsp = "/");
+std::string makeSocketIoConnectErrorPacket(
+    const std::string& nsp, int code, const std::string& message);
 std::string makeSocketIoAckPacket(const std::string& ackId);
 std::string makeSocketIoAckPacket(
     const std::string& ackId, const std::string& ackJsonArrayPayload, const std::string& nsp = "/");
@@ -56,6 +59,13 @@ struct SocketIoEventPacket {
   bool isBinary = false;
 };
 
+struct SocketIoConnectPacket {
+  std::string nsp = "/";
+  std::string authJson;
+};
+
+bool parseSocketIoConnectPacket(
+    const std::string& packet, SocketIoConnectPacket& connectPacketOut);
 bool parseSocketIoEventPacket(
     const std::string& packet, SocketIoEventPacket& eventPacketOut);
 std::string parseSocketIoEventName(const std::string& eventPayload);

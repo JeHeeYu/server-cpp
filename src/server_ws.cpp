@@ -110,9 +110,28 @@ void Server::serveWebSocket(int clientFd, const std::string& sid)
 
     const protocol::SocketIoPacketType packetType = protocol::parseSocketIoPacketType(packet);
     if (packetType == protocol::SocketIoPacketType::connect) {
-      const std::string nsp = protocol::parseSocketIoNamespace(packet);
-      connectNamespace(sid, nsp);
-      if (!utils::sendWebSocketTextFrame(clientFd, protocol::makeSocketIoConnectPacket(sid, nsp))) {
+      protocol::SocketIoConnectPacket connectPacket;
+      if (!protocol::parseSocketIoConnectPacket(packet, connectPacket)) {
+        if (!utils::sendWebSocketTextFrame(
+                clientFd, protocol::makeSocketIoConnectErrorPacket("/", 4001, "malformed connect packet"))) {
+          break;
+        }
+        continue;
+      }
+
+      const ConnectDecision decision = evaluateNamespaceConnect(sid, connectPacket.nsp, connectPacket.authJson);
+      if (!decision.allowed) {
+        if (!utils::sendWebSocketTextFrame(
+                clientFd,
+                protocol::makeSocketIoConnectErrorPacket(connectPacket.nsp, decision.code, decision.message))) {
+          break;
+        }
+        continue;
+      }
+
+      connectNamespace(sid, connectPacket.nsp);
+      if (!utils::sendWebSocketTextFrame(
+              clientFd, protocol::makeSocketIoConnectPacket(sid, connectPacket.nsp))) {
         break;
       }
       continue;

@@ -98,6 +98,12 @@ void Server::setEventHandler(EventHandler handler)
   eventHandler = std::move(handler);
 }
 
+void Server::setNamespaceConnectHandler(NamespaceConnectHandler handler)
+{
+  std::lock_guard<std::mutex> lock(connectHandlerMutex);
+  namespaceConnectHandler = std::move(handler);
+}
+
 void Server::acceptLoop()
 {
   while (running.load()) {
@@ -223,6 +229,20 @@ void Server::disconnectNamespace(const std::string& sid, const std::string& nsp)
       sessionRooms.erase(roomsIt);
     }
   }
+}
+
+Server::ConnectDecision Server::evaluateNamespaceConnect(
+    const std::string& sid, const std::string& nsp, const std::string& authJson)
+{
+  NamespaceConnectHandler handlerCopy;
+  {
+    std::lock_guard<std::mutex> lock(connectHandlerMutex);
+    handlerCopy = namespaceConnectHandler;
+  }
+  if (!handlerCopy) {
+    return ConnectDecision{};
+  }
+  return handlerCopy(*this, sid, protocol::normalizeNamespace(nsp), authJson);
 }
 
 std::chrono::milliseconds Server::sessionTtl() const

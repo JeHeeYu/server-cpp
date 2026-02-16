@@ -22,6 +22,9 @@ SocketIoPacketType parseSocketIoPacketType(const std::string& packet)
   if (packet.rfind("40", 0) == 0) {
     return SocketIoPacketType::connect;
   }
+  if (packet.rfind("44", 0) == 0) {
+    return SocketIoPacketType::connectError;
+  }
   if (packet.rfind("41", 0) == 0) {
     return SocketIoPacketType::disconnect;
   }
@@ -55,6 +58,11 @@ std::string makeSocketIoConnectPacket(const std::string& sid, const std::string&
   return namespacePrefix("40", nsp) + "{\"sid\":\"" + sid + "\"}";
 }
 
+std::string makeSocketIoConnectErrorPacket(const std::string& nsp, int code, const std::string& message)
+{
+  return namespacePrefix("44", nsp) + "{\"message\":\"" + message + "\",\"code\":" + std::to_string(code) + "}";
+}
+
 std::string makeSocketIoAckPacket(const std::string& ackId)
 {
   return "43" + ackId + "[{\"ok\":true}]";
@@ -79,6 +87,30 @@ std::string makeSocketIoEventPacket(
 bool hasPingEventName(const std::string& payload)
 {
   return payload.find("\"ping\"") != std::string::npos;
+}
+
+bool parseSocketIoConnectPacket(const std::string& packet, SocketIoConnectPacket& connectPacketOut)
+{
+  connectPacketOut = SocketIoConnectPacket{};
+  if (parseSocketIoPacketType(packet) != SocketIoPacketType::connect) {
+    return false;
+  }
+
+  std::size_t pos = socketIoPayloadStartOffset(SocketIoPacketType::connect);
+  if (pos < packet.size() && packet[pos] == '/') {
+    const std::size_t endPos = packet.find(',', pos);
+    if (endPos == std::string::npos) {
+      connectPacketOut.nsp = normalizeNamespace(packet.substr(pos));
+      return true;
+    }
+    connectPacketOut.nsp = normalizeNamespace(packet.substr(pos, endPos - pos));
+    pos = endPos + 1;
+  }
+
+  if (pos < packet.size()) {
+    connectPacketOut.authJson = packet.substr(pos);
+  }
+  return true;
 }
 
 bool parseSocketIoEventPacket(const std::string& packet, SocketIoEventPacket& eventPacketOut)

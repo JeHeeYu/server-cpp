@@ -24,9 +24,16 @@ struct ServerConfig {
 class Server {
  public:
   using AckCallback = std::function<void(const std::string& ackJsonArrayPayload)>;
+  struct ConnectDecision {
+    bool allowed = true;
+    int code = 403;
+    std::string message = "namespace rejected";
+  };
   using EventHandler = std::function<void(
       Server& server, const std::string& sid, const std::string& nsp, const std::string& eventName,
       const std::string& eventData, const AckCallback& ack)>;
+  using NamespaceConnectHandler = std::function<ConnectDecision(
+      Server& server, const std::string& sid, const std::string& nsp, const std::string& authJson)>;
 
   explicit Server(ServerConfig config);
 
@@ -34,6 +41,7 @@ class Server {
   void stop();
   bool isRunning() const;
   void setEventHandler(EventHandler handler);
+  void setNamespaceConnectHandler(NamespaceConnectHandler handler);
   void joinRoom(const std::string& sid, const std::string& nsp, const std::string& room);
   void leaveRoom(const std::string& sid, const std::string& nsp, const std::string& room);
   void emitToRoomEvent(
@@ -61,6 +69,8 @@ class Server {
   void removeSession(const std::string& sid);
   void connectNamespace(const std::string& sid, const std::string& nsp);
   void disconnectNamespace(const std::string& sid, const std::string& nsp);
+  ConnectDecision evaluateNamespaceConnect(
+      const std::string& sid, const std::string& nsp, const std::string& authJson);
   std::chrono::milliseconds sessionTtl() const;
   void dispatchSocketIoEvent(
       const std::string& sid, const std::string& packet, const std::function<void(const std::string&)>& sendPacket);
@@ -79,7 +89,9 @@ class Server {
   std::atomic<std::uint64_t> nextSid{1};
   std::mutex sessionsMutex;
   std::mutex eventHandlerMutex;
+  std::mutex connectHandlerMutex;
   EventHandler eventHandler;
+  NamespaceConnectHandler namespaceConnectHandler;
   std::unordered_map<std::string, SessionState> sessions;
   std::unordered_map<std::string, std::unordered_set<std::string>> roomMembers;
   std::unordered_map<std::string, std::unordered_set<std::string>> sessionRooms;

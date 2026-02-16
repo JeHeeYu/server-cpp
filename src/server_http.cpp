@@ -34,9 +34,22 @@ void Server::processEngineIoPacket(const std::string& sid, const std::string& pa
   }
 
   if (packetType == protocol::SocketIoPacketType::connect) {
-    const std::string nsp = protocol::parseSocketIoNamespace(packet);
-    connectNamespace(sid, nsp);
-    enqueuePacket(sid, protocol::makeSocketIoConnectPacket(sid, nsp));
+    protocol::SocketIoConnectPacket connectPacket;
+    if (!protocol::parseSocketIoConnectPacket(packet, connectPacket)) {
+      enqueuePacket(
+          sid, protocol::makeSocketIoConnectErrorPacket("/", 4001, "malformed connect packet"));
+      return;
+    }
+
+    const ConnectDecision decision = evaluateNamespaceConnect(sid, connectPacket.nsp, connectPacket.authJson);
+    if (!decision.allowed) {
+      enqueuePacket(
+          sid, protocol::makeSocketIoConnectErrorPacket(connectPacket.nsp, decision.code, decision.message));
+      return;
+    }
+
+    connectNamespace(sid, connectPacket.nsp);
+    enqueuePacket(sid, protocol::makeSocketIoConnectPacket(sid, connectPacket.nsp));
     return;
   }
 

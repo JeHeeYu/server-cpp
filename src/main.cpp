@@ -18,6 +18,19 @@ int main()
   }
 
   socketIoServer::Server server(config);
+  server.setNamespaceConnectHandler(
+      [](socketIoServer::Server&, const std::string&, const std::string& nsp, const std::string& authJson) {
+        if (nsp == "/blocked") {
+          return socketIoServer::Server::ConnectDecision{false, 403, "namespace blocked"};
+        }
+        if (nsp == "/secure") {
+          if (authJson.find("\"token\":\"allow\"") == std::string::npos) {
+            return socketIoServer::Server::ConnectDecision{false, 401, "unauthorized"};
+          }
+        }
+        return socketIoServer::Server::ConnectDecision{};
+      });
+
   server.setEventHandler(
       [](socketIoServer::Server& serverRef, const std::string& sid, const std::string& nsp,
           const std::string& eventName, const std::string& eventData,
@@ -42,9 +55,19 @@ int main()
           if (!room.empty()) {
             const std::string body =
                 "{\"room\":\"" + room + "\",\"from\":\"" + sid + "\",\"message\":\"" + message + "\"}";
-            serverRef.emitToRoomEvent(nsp, room, "room_message", body);
+            serverRef.emitToRoomEvent(nsp, room, "room_message", body, sid);
           }
           ack("[{\"ok\":true}]");
+          return;
+        }
+
+        if (eventName == "leave_room") {
+          const std::string room = socketIoServer::protocol::parseSocketIoStringField(eventData, "room");
+          if (!room.empty()) {
+            serverRef.leaveRoom(sid, nsp, room);
+          }
+          ack("[{\"ok\":true}]");
+          return;
         }
       });
 
