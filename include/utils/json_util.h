@@ -12,6 +12,9 @@ std::string makeSocketIoConnectErrorPayload(int code, const std::string& message
 std::string makeSocketIoAckOkPayload();
 std::string makeSocketIoEventArrayPayload(const std::string& eventName, const std::string& jsonObjectPayload);
 std::string makeServerErrorPayload(int code, const std::string& message);
+std::string makeRoomMessagePayload(
+    const std::string& roomField, const std::string& room, const std::string& fromSid,
+    const std::string& messageField, const std::string& message);
 std::string encodeBase64(const std::string& binaryData);
 
 }  // namespace socketIoServer::utils

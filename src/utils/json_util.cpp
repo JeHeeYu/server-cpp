@@ -98,6 +98,17 @@ std::string makeServerErrorPayload(int code, const std::string& message)
   return boost::json::serialize(payload);
 }
 
+std::string makeRoomMessagePayload(
+    const std::string& roomField, const std::string& room, const std::string& fromSid,
+    const std::string& messageField, const std::string& message)
+{
+  boost::json::object payload;
+  payload[roomField] = room;
+  payload["from"] = fromSid;
+  payload[messageField] = message;
+  return boost::json::serialize(payload);
+}
+
 std::string encodeBase64(const std::string& binaryData)
 {
   return base64Encode(
