@@ -23,6 +23,8 @@ inline constexpr int kCodeEmptyEventName = 4004;
 inline constexpr int kCodeBinaryAttachmentOutOfOrder = 4006;
 inline constexpr int kCodeBinaryAttachmentCountMismatch = 4007;
 inline constexpr int kCodeOutgoingQueueOverflow = 4008;
+inline constexpr int kCodePayloadTooLarge = 4009;
+inline constexpr int kCodeTooManyBinaryAttachments = 4010;
 
 inline constexpr const char* kMessageMalformedConnectPacket = "malformed connect packet";
 inline constexpr const char* kMessageMalformedEventPacket = "malformed event packet";
@@ -31,5 +33,7 @@ inline constexpr const char* kMessageEmptyEventName = "empty event name";
 inline constexpr const char* kMessageBinaryAttachmentOutOfOrder = "binary attachment out of order";
 inline constexpr const char* kMessageBinaryAttachmentCountMismatch = "binary attachment count mismatch";
 inline constexpr const char* kMessageOutgoingQueueOverflow = "outgoing queue overflow";
+inline constexpr const char* kMessagePayloadTooLarge = "payload too large";
+inline constexpr const char* kMessageTooManyBinaryAttachments = "too many binary attachments";
 
 }  // namespace socketIoServer::constants

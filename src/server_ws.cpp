@@ -111,7 +111,30 @@ void Server::serveWebSocket(int clientFd, const std::string& sid)
         continue;
       }
 
+      if (packet.size() > config.maxBinaryAttachmentBytes) {
+        if (!utils::sendWebSocketTextFrame(
+                clientFd,
+                protocol::makeSocketIoErrorEventPacket(
+                    pendingBinaryEvent.nsp, constants::kCodePayloadTooLarge, constants::kMessagePayloadTooLarge))) {
+          break;
+        }
+        hasPendingBinaryEvent = false;
+        pendingBinaryAttachments.clear();
+        continue;
+      }
       pendingBinaryAttachments.push_back(utils::encodeBase64(packet));
+      if (pendingBinaryAttachments.size() > config.maxBinaryAttachmentsPerEvent) {
+        if (!utils::sendWebSocketTextFrame(
+                clientFd,
+                protocol::makeSocketIoErrorEventPacket(
+                    pendingBinaryEvent.nsp, constants::kCodeTooManyBinaryAttachments,
+                    constants::kMessageTooManyBinaryAttachments))) {
+          break;
+        }
+        hasPendingBinaryEvent = false;
+        pendingBinaryAttachments.clear();
+        continue;
+      }
       if (pendingBinaryAttachments.size() > static_cast<std::size_t>(pendingBinaryEvent.attachmentCount)) {
         if (!utils::sendWebSocketTextFrame(
                 clientFd,
@@ -155,6 +178,15 @@ void Server::serveWebSocket(int clientFd, const std::string& sid)
     if (packet.empty()) {
       continue;
     }
+    if (packet.size() > config.maxIncomingPacketBytes) {
+      if (!utils::sendWebSocketTextFrame(
+              clientFd,
+              protocol::makeSocketIoErrorEventPacket(
+                  "/", constants::kCodePayloadTooLarge, constants::kMessagePayloadTooLarge))) {
+        break;
+      }
+      continue;
+    }
 
     touchSession(sid);
 
@@ -171,7 +203,7 @@ void Server::serveWebSocket(int clientFd, const std::string& sid)
 
     const protocol::EngineIoControlPacket controlType = protocol::parseEngineIoControlPacket(packet);
     if (controlType == protocol::EngineIoControlPacket::close) {
-      removeSession(sid);
+      markSessionDisconnected(sid);
       break;
     }
     if (controlType == protocol::EngineIoControlPacket::ping) {
@@ -260,6 +292,16 @@ void Server::serveWebSocket(int clientFd, const std::string& sid)
           }
           continue;
         }
+        if (static_cast<std::size_t>(parsedBinaryEvent.attachmentCount) > config.maxBinaryAttachmentsPerEvent) {
+          if (!utils::sendWebSocketTextFrame(
+                  clientFd,
+                  protocol::makeSocketIoErrorEventPacket(
+                      parsedBinaryEvent.nsp, constants::kCodeTooManyBinaryAttachments,
+                      constants::kMessageTooManyBinaryAttachments))) {
+            break;
+          }
+          continue;
+        }
 
         hasPendingBinaryEvent = true;
         pendingBinaryEvent = std::move(parsedBinaryEvent);
@@ -285,7 +327,7 @@ void Server::serveWebSocket(int clientFd, const std::string& sid)
     }
   }
 
-  removeSession(sid);
+  markSessionDisconnected(sid);
 }
 
 }  // namespace socketIoServer

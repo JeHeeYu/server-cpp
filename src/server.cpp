@@ -150,15 +150,27 @@ void Server::sessionLoop()
   while (running.load()) {
     std::this_thread::sleep_for(std::chrono::seconds(1));
     const auto now = std::chrono::steady_clock::now();
-    const auto ttl = sessionTtl();
+    const auto onlineTtl = sessionTtl();
+    const auto recoveryTtl = std::chrono::milliseconds(config.sessionRecoveryMs);
     std::vector<std::string> expiredSids;
 
     {
       std::lock_guard<std::mutex> lock(sessionsMutex);
       for (const auto& entry : sessions) {
-        const auto idle = std::chrono::duration_cast<std::chrono::milliseconds>(now - entry.second.lastSeenAt);
-        if (idle > ttl) {
-          expiredSids.push_back(entry.first);
+        const SessionState& session = entry.second;
+        if (session.online) {
+          const auto idle = std::chrono::duration_cast<std::chrono::milliseconds>(now - session.lastSeenAt);
+          if (idle > onlineTtl) {
+            expiredSids.push_back(entry.first);
+          }
+          continue;
+        }
+
+        if (session.disconnectedAt != std::chrono::steady_clock::time_point::min()) {
+          const auto offline = std::chrono::duration_cast<std::chrono::milliseconds>(now - session.disconnectedAt);
+          if (offline > recoveryTtl) {
+            expiredSids.push_back(entry.first);
+          }
         }
       }
     }
@@ -185,8 +197,22 @@ void Server::touchSession(const std::string& sid)
   std::lock_guard<std::mutex> lock(sessionsMutex);
   const auto it = sessions.find(sid);
   if (it != sessions.end()) {
+    it->second.online = true;
     it->second.lastSeenAt = std::chrono::steady_clock::now();
+    it->second.disconnectedAt = std::chrono::steady_clock::time_point::min();
   }
+}
+
+void Server::markSessionDisconnected(const std::string& sid)
+{
+  std::lock_guard<std::mutex> lock(sessionsMutex);
+  const auto it = sessions.find(sid);
+  if (it == sessions.end()) {
+    return;
+  }
+  it->second.online = false;
+  it->second.disconnectedAt = std::chrono::steady_clock::now();
+  resetPendingBinaryState(it->second);
 }
 
 void Server::removeSession(const std::string& sid)
@@ -206,6 +232,16 @@ void Server::removeSession(const std::string& sid)
     sessionRooms.erase(roomsIt);
   }
   sessions.erase(sid);
+}
+
+void Server::resetPendingBinaryState(SessionState& session)
+{
+  session.pendingBinaryNsp.clear();
+  session.pendingBinaryAckId.clear();
+  session.pendingBinaryEventPayload.clear();
+  session.pendingBinaryExpectedAttachmentCount = 0;
+  session.pendingBinaryTotalBytes = 0;
+  session.pendingBinaryAttachments.clear();
 }
 
 void Server::connectNamespace(const std::string& sid, const std::string& nsp)
@@ -448,6 +484,11 @@ void Server::enqueuePacket(const std::string& sid, const std::string& packet)
   if (config.maxOutgoingPacketsPerSession > 0 &&
       it->second.outgoingPackets.size() >= config.maxOutgoingPacketsPerSession) {
     it->second.outgoingPackets.pop_front();
+    it->second.outgoingPackets.push_back(protocol::makeSocketIoErrorEventPacket(
+        "/", constants::kCodeOutgoingQueueOverflow, constants::kMessageOutgoingQueueOverflow));
+    if (it->second.outgoingPackets.size() >= config.maxOutgoingPacketsPerSession) {
+      it->second.outgoingPackets.pop_front();
+    }
   }
   it->second.outgoingPackets.push_back(packet);
 }

@@ -20,7 +20,11 @@ struct ServerConfig {
   std::uint16_t maxConnections = 1024;
   std::uint32_t pingIntervalMs = 25000;
   std::uint32_t pingTimeoutMs = 20000;
+  std::uint32_t sessionRecoveryMs = 30000;
   std::size_t maxOutgoingPacketsPerSession = 1024;
+  std::size_t maxIncomingPacketBytes = 1024 * 1024;
+  std::size_t maxBinaryAttachmentsPerEvent = 16;
+  std::size_t maxBinaryAttachmentBytes = 2 * 1024 * 1024;
 };
 
 class Server {
@@ -59,12 +63,15 @@ class Server {
     std::string sid;
     std::unordered_set<std::string> connectedNamespaces;
     std::deque<std::string> outgoingPackets;
+    bool online = true;
     std::string pendingBinaryNsp;
     std::string pendingBinaryAckId;
     std::string pendingBinaryEventPayload;
     std::size_t pendingBinaryExpectedAttachmentCount = 0;
+    std::size_t pendingBinaryTotalBytes = 0;
     std::vector<std::string> pendingBinaryAttachments;
     std::chrono::steady_clock::time_point lastSeenAt = std::chrono::steady_clock::now();
+    std::chrono::steady_clock::time_point disconnectedAt = std::chrono::steady_clock::time_point::min();
   };
 
   void acceptLoop();
@@ -77,6 +84,7 @@ class Server {
   std::string createSession();
   bool hasSession(const std::string& sid);
   void touchSession(const std::string& sid);
+  void markSessionDisconnected(const std::string& sid);
   void removeSession(const std::string& sid);
   void connectNamespace(const std::string& sid, const std::string& nsp);
   void disconnectNamespace(const std::string& sid, const std::string& nsp);
@@ -99,6 +107,7 @@ class Server {
   void enqueuePacket(const std::string& sid, const std::string& packet);
   void registerWebSocketClient(int clientFd, const std::string& sid);
   void unregisterWebSocketClient(int clientFd);
+  void resetPendingBinaryState(SessionState& session);
 
   ServerConfig config;
   std::atomic<bool> running{false};

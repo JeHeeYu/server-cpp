@@ -21,8 +21,26 @@ void Server::processEngineIoPacket(const std::string& sid, const std::string& pa
   if (packet.empty()) {
     return;
   }
+  if (packet.size() > config.maxIncomingPacketBytes) {
+    enqueuePacket(sid, protocol::makeSocketIoErrorEventPacket(
+                           "/", constants::kCodePayloadTooLarge, constants::kMessagePayloadTooLarge));
+    return;
+  }
 
   touchSession(sid);
+  const auto appendOutgoingPacketUnlocked = [this](SessionState& session, const std::string& outPacket) {
+    session.lastSeenAt = std::chrono::steady_clock::now();
+    if (config.maxOutgoingPacketsPerSession > 0 &&
+        session.outgoingPackets.size() >= config.maxOutgoingPacketsPerSession) {
+      session.outgoingPackets.pop_front();
+      session.outgoingPackets.push_back(protocol::makeSocketIoErrorEventPacket(
+          "/", constants::kCodeOutgoingQueueOverflow, constants::kMessageOutgoingQueueOverflow));
+      if (session.outgoingPackets.size() >= config.maxOutgoingPacketsPerSession) {
+        session.outgoingPackets.pop_front();
+      }
+    }
+    session.outgoingPackets.push_back(outPacket);
+  };
 
   if (packet.rfind(protocol::kEngineIoPacketBinaryPrefix, 0) == 0) {
     protocol::SocketIoEventPacket pendingEvent;
@@ -38,21 +56,37 @@ void Server::processEngineIoPacket(const std::string& sid, const std::string& pa
 
       SessionState& session = sessionIt->second;
       if (session.pendingBinaryExpectedAttachmentCount == 0) {
-        session.outgoingPackets.push_back(protocol::makeSocketIoErrorEventPacket(
-            "/", constants::kCodeBinaryAttachmentOutOfOrder, constants::kMessageBinaryAttachmentOutOfOrder));
+        appendOutgoingPacketUnlocked(
+            session, protocol::makeSocketIoErrorEventPacket(
+                         "/", constants::kCodeBinaryAttachmentOutOfOrder,
+                         constants::kMessageBinaryAttachmentOutOfOrder));
         return;
       }
 
-      session.pendingBinaryAttachments.push_back(packet.substr(1));
+      const std::string encodedBinary = packet.substr(1);
+      if (encodedBinary.size() > config.maxBinaryAttachmentBytes) {
+        appendOutgoingPacketUnlocked(
+            session, protocol::makeSocketIoErrorEventPacket(
+                         session.pendingBinaryNsp, constants::kCodePayloadTooLarge, constants::kMessagePayloadTooLarge));
+        resetPendingBinaryState(session);
+        return;
+      }
+      session.pendingBinaryAttachments.push_back(encodedBinary);
+      session.pendingBinaryTotalBytes += encodedBinary.size();
+      if (session.pendingBinaryAttachments.size() > config.maxBinaryAttachmentsPerEvent) {
+        appendOutgoingPacketUnlocked(
+            session, protocol::makeSocketIoErrorEventPacket(
+                         session.pendingBinaryNsp, constants::kCodeTooManyBinaryAttachments,
+                         constants::kMessageTooManyBinaryAttachments));
+        resetPendingBinaryState(session);
+        return;
+      }
       if (session.pendingBinaryAttachments.size() > session.pendingBinaryExpectedAttachmentCount) {
-        session.outgoingPackets.push_back(protocol::makeSocketIoErrorEventPacket(
-            session.pendingBinaryNsp, constants::kCodeBinaryAttachmentCountMismatch,
-            constants::kMessageBinaryAttachmentCountMismatch));
-        session.pendingBinaryExpectedAttachmentCount = 0;
-        session.pendingBinaryAttachments.clear();
-        session.pendingBinaryNsp.clear();
-        session.pendingBinaryAckId.clear();
-        session.pendingBinaryEventPayload.clear();
+        appendOutgoingPacketUnlocked(
+            session, protocol::makeSocketIoErrorEventPacket(
+                         session.pendingBinaryNsp, constants::kCodeBinaryAttachmentCountMismatch,
+                         constants::kMessageBinaryAttachmentCountMismatch));
+        resetPendingBinaryState(session);
         return;
       }
 
@@ -61,11 +95,7 @@ void Server::processEngineIoPacket(const std::string& sid, const std::string& pa
         pendingEvent.ackId = session.pendingBinaryAckId;
         pendingEvent.eventPayload = session.pendingBinaryEventPayload;
         attachments = session.pendingBinaryAttachments;
-        session.pendingBinaryExpectedAttachmentCount = 0;
-        session.pendingBinaryAttachments.clear();
-        session.pendingBinaryNsp.clear();
-        session.pendingBinaryAckId.clear();
-        session.pendingBinaryEventPayload.clear();
+        resetPendingBinaryState(session);
         readyToDispatch = true;
       }
     }
@@ -100,14 +130,11 @@ void Server::processEngineIoPacket(const std::string& sid, const std::string& pa
     std::lock_guard<std::mutex> lock(sessionsMutex);
     const auto sessionIt = sessions.find(sid);
     if (sessionIt != sessions.end() && sessionIt->second.pendingBinaryExpectedAttachmentCount > 0) {
-      sessionIt->second.outgoingPackets.push_back(protocol::makeSocketIoErrorEventPacket(
-          sessionIt->second.pendingBinaryNsp, constants::kCodeBinaryAttachmentCountMismatch,
-          constants::kMessageBinaryAttachmentCountMismatch));
-      sessionIt->second.pendingBinaryExpectedAttachmentCount = 0;
-      sessionIt->second.pendingBinaryAttachments.clear();
-      sessionIt->second.pendingBinaryNsp.clear();
-      sessionIt->second.pendingBinaryAckId.clear();
-      sessionIt->second.pendingBinaryEventPayload.clear();
+      appendOutgoingPacketUnlocked(
+          sessionIt->second, protocol::makeSocketIoErrorEventPacket(
+                                 sessionIt->second.pendingBinaryNsp, constants::kCodeBinaryAttachmentCountMismatch,
+                                 constants::kMessageBinaryAttachmentCountMismatch));
+      resetPendingBinaryState(sessionIt->second);
     }
   }
 
@@ -153,15 +180,17 @@ void Server::processEngineIoPacket(const std::string& sid, const std::string& pa
         return;
       }
       if (sessionIt->second.pendingBinaryExpectedAttachmentCount > 0) {
-        sessionIt->second.outgoingPackets.push_back(protocol::makeSocketIoErrorEventPacket(
-            sessionIt->second.pendingBinaryNsp, constants::kCodeBinaryAttachmentCountMismatch,
-            constants::kMessageBinaryAttachmentCountMismatch));
+        appendOutgoingPacketUnlocked(
+            sessionIt->second, protocol::makeSocketIoErrorEventPacket(
+                                   sessionIt->second.pendingBinaryNsp, constants::kCodeBinaryAttachmentCountMismatch,
+                                   constants::kMessageBinaryAttachmentCountMismatch));
       }
       sessionIt->second.pendingBinaryNsp = parsedBinaryEvent.nsp;
       sessionIt->second.pendingBinaryAckId = parsedBinaryEvent.ackId;
       sessionIt->second.pendingBinaryEventPayload = parsedBinaryEvent.eventPayload;
       sessionIt->second.pendingBinaryExpectedAttachmentCount =
           static_cast<std::size_t>(parsedBinaryEvent.attachmentCount);
+      sessionIt->second.pendingBinaryTotalBytes = 0;
       sessionIt->second.pendingBinaryAttachments.clear();
       return;
     }
